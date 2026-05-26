@@ -29,7 +29,7 @@
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useCallback,useRef,createContext,useContext}=React;
-
+ 
 /* ── THEMES ── */
 const TH={
   light:{bg:"#E8E0D4",bgL:"#F0E8DC",bgD:"#D8D0C4",shL:"#F5EDE1",shD:"#C4BCA8",acc:"#8B6914",accL:"#A6841E",accS:"rgba(139,105,20,.12)",tx:"#2C2416",tx2:"#6B5D4A",tx3:"#9A8B74",ok:"#5A7A4A",okS:"rgba(90,122,74,.15)",warn:"#B8860B",qt:"#7B5B2A",dng:"#A0422A"},
@@ -38,24 +38,24 @@ const TH={
 const Ctx=createContext();
 const useT=()=>useContext(Ctx);
 const fD="'Cormorant Garamond',serif",fB="'Nunito',sans-serif",fM="'JetBrains Mono',monospace",fQ="'Playfair Display',serif";
-
+ 
 /* ── NEU HELPERS ── */
 const sh=(C,ins=false,i=1)=>{const d=Math.round(6*i),b=Math.round(12*i);return ins?`inset ${d}px ${d}px ${b}px ${C.shD},inset -${d}px -${d}px ${b}px ${C.shL}`:`${d}px ${d}px ${b}px ${C.shD},-${d}px -${d}px ${b}px ${C.shL}`;};
 const shP=C=>`inset 3px 3px 6px ${C.shD},inset -3px -3px 6px ${C.shL}`;
 const nC=C=>({background:C.bg,borderRadius:20,boxShadow:sh(C),border:"none"});
 const nI=C=>({background:C.bg,borderRadius:16,boxShadow:sh(C,true),border:"none"});
 const nB=C=>({background:C.bg,borderRadius:14,boxShadow:sh(C,false,.7),border:"none",cursor:"pointer",transition:"all .15s",fontFamily:fB});
-
+ 
 /* ── SCREENS ── */
 const S={LIB:0,UP:1,PROC:2,OV:3,CH:4,MM:5,QA:6,DIG:7,EXP:8};
-
+ 
 /* ── MOCK DATA ── */
 const BOOKS=[
   {id:1,title:"Atomic Habits",author:"James Clear",chapters:20,progress:65,emoji:"📗"},
   {id:2,title:"Deep Work",author:"Cal Newport",chapters:14,progress:30,emoji:"📘"},
   {id:3,title:"Thinking, Fast and Slow",author:"Daniel Kahneman",chapters:38,progress:0,emoji:"📙",proc:true},
 ];
-
+ 
 const CHS=[
   {n:1,title:"The Surprising Power of Atomic Habits",done:true,pages:"pp. 15–32"},
   {n:2,title:"How Your Habits Shape Your Identity",done:true,pages:"pp. 33–49"},
@@ -64,7 +64,7 @@ const CHS=[
   {n:5,title:"The Best Way to Start a New Habit",done:false,pages:"pp. 83–96"},
   {n:6,title:"Motivation Is Overrated; Environment Often Matters More",done:false,pages:"pp. 97–112"},
 ];
-
+ 
 const CHD={
   title:"Chapter 1: The Surprising Power of Atomic Habits",
   pageRange:"Pages 15–32",
@@ -144,7 +144,7 @@ const CHD={
     },
   ],
 };
-
+ 
 const MMAP={
   center:"Ch.1: Atomic Habits",
   branches:[
@@ -154,15 +154,15 @@ const MMAP={
     {label:"Marginal Gains",lc:"#A0422A",dc:"#D06040",ch:["British Cycling","1% everywhere","5yr transform"]},
   ],
 };
-
+ 
 const QAI=[
   {role:"user",text:"What does the author say about goals vs systems?"},
   {role:"ai",text:"Clear argues that goals are inadequate for lasting change because winners and losers typically share identical goals — every Olympic athlete wants gold. The differentiator is always the system: the daily process of training, recovery, and refinement. He identifies four specific problems with goal-oriented thinking: they don't distinguish you from competitors, achieving one creates only momentary change, they defer happiness to a future condition, and they remove motivation once reached. His conclusion: 'You do not rise to the level of your goals. You fall to the level of your systems.' (Chapter 1, pages 22–27)",sources:["Ch. 1, pp. 22–27"]},
 ];
-
+ 
 /* ── SHARED COMPONENTS ── */
 function ThemeToggle(){const{dk,tog}=useT();const C=dk?TH.dark:TH.light;return<button onClick={tog} aria-label="Toggle dark mode" style={{...nB(C),width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:C.acc}}>{dk?"☀️":"🌙"}</button>;}
-
+ 
 function Nav({scr,onNav,sub}){const{dk}=useT();const C=dk?TH.dark:TH.light;
 return<div style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:10,background:C.bg,boxShadow:`0 2px 8px ${C.shD}`,zIndex:100,flexShrink:0}}>
   {scr!==S.LIB&&<button onClick={()=>onNav(sub?S.OV:S.LIB)} style={{...nB(C),width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:C.acc}}>←</button>}
@@ -170,7 +170,7 @@ return<div style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:10
   {sub&&<span style={{fontFamily:fB,fontSize:11,color:C.tx3,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</span>}
   <ThemeToggle/>
 </div>;}
-
+ 
 function Bar({scr,onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
 const items=[{s:S.LIB,icon:"📚",lb:"Library"},{s:S.DIG,icon:"📅",lb:"Daily"},{s:S.EXP,icon:"📤",lb:"Export"}];
 return<div style={{display:"flex",padding:"8px 16px 10px",background:C.bg,boxShadow:`0 -2px 8px ${C.shD}`,flexShrink:0}}>
@@ -179,11 +179,11 @@ return<div style={{display:"flex",padding:"8px 16px 10px",background:C.bg,boxSha
     <span style={{fontFamily:fB,fontSize:11,color:scr===t.s?C.acc:C.tx3,fontWeight:scr===t.s?700:400}}>{t.lb}</span>
   </button>)}
 </div>;}
-
+ 
 function Tag({children,color}){const{dk}=useT();const C=dk?TH.dark:TH.light;const c=color||C.acc;return<span style={{display:"inline-block",padding:"4px 12px",borderRadius:20,fontFamily:fB,fontSize:11,fontWeight:600,color:c,background:`${c}15`,marginRight:6,marginBottom:4}}>{children}</span>;}
-
+ 
 function Prog({value,color}){const{dk}=useT();const C=dk?TH.dark:TH.light;const c=color||C.acc;return<div style={{...nI(C),height:8,borderRadius:8,overflow:"hidden",padding:0}}><div style={{width:`${value}%`,height:"100%",borderRadius:8,background:`linear-gradient(90deg,${c},${C.accL})`,transition:"width .6s"}}/></div>;}
-
+ 
 /* ── LIBRARY ── */
 function Lib({onNav,onSel}){const{dk}=useT();const C=dk?TH.dark:TH.light;const[q,sQ]=useState("");
 return<div style={{padding:20}}>
@@ -195,7 +195,7 @@ return<div style={{padding:20}}>
   <div style={{...nI(C),padding:0,marginBottom:18}}><input value={q} onChange={e=>sQ(e.target.value)} placeholder="Search your books..." style={{width:"100%",padding:"13px 18px",borderRadius:16,border:"none",background:"transparent",color:C.tx,fontFamily:fB,fontSize:14,outline:"none",boxSizing:"border-box"}}/></div>
   <div style={{display:"flex",flexDirection:"column",gap:14}}>
     {BOOKS.filter(b=>b.title.toLowerCase().includes(q.toLowerCase())).map(b=>(
-      <div key={b.id} onClick={()=>{onSel(b);onNav(S.OV);}} style={{...nC(C),padding:18,cursor:"pointer",display:"flex",gap:14,alignItems:"center"}}>
+      <div key={b.id} onClick={()=>{if(b.proc){return;}onSel(b);onNav(S.OV);}} style={{...nC(C),padding:18,cursor:b.proc?"default":"pointer",display:"flex",gap:14,alignItems:"center",opacity:b.proc?.7:1}}>
         <div style={{...nI(C),width:54,height:68,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>{b.emoji}</div>
         <div style={{flex:1,minWidth:0}}>
           <h3 style={{fontFamily:fD,fontSize:17,fontWeight:700,color:C.tx,margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.title}</h3>
@@ -207,24 +207,64 @@ return<div style={{padding:20}}>
     ))}
   </div>
 </div>;}
-
+ 
 /* ── UPLOAD ── */
-function Upload({onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+function Upload({onNav,onFile}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const fileRef=useRef(null);
+const[file,setFile]=useState(null);
+const[err,setErr]=useState("");
+const handlePick=()=>{fileRef.current?.click();};
+const handleFile=e=>{
+  const f=e.target.files?.[0];
+  if(!f)return;
+  setErr("");
+  const ext=f.name.split('.').pop().toLowerCase();
+  if(ext!=="pdf"&&ext!=="epub"){setErr("Only PDF and EPUB files are supported.");return;}
+  if(f.size>100*1024*1024){setErr("File too large. Maximum size is 100 MB.");return;}
+  setFile(f);
+  onFile(f.name.replace(/\.[^.]+$/,''));
+};
+const handleStart=()=>{if(file){onNav(S.PROC);}};
 return<div style={{padding:20,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1}}>
-  <div onClick={()=>onNav(S.PROC)} style={{...nC(C),width:"100%",maxWidth:360,height:240,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,cursor:"pointer"}}>
+  <input ref={fileRef} type="file" accept=".pdf,.epub" onChange={handleFile} style={{display:"none"}}/>
+  {!file?<div onClick={handlePick} style={{...nC(C),width:"100%",maxWidth:360,height:240,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,cursor:"pointer"}}>
     <div style={{...nI(C),width:76,height:76,borderRadius:24,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34}}>📄</div>
-    <p style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx}}>Drop your book here</p>
-    <p style={{fontFamily:fB,fontSize:13,color:C.tx3}}>or tap to browse files</p>
+    <p style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx}}>Tap to select your book</p>
+    <p style={{fontFamily:fB,fontSize:13,color:C.tx3}}>Choose a PDF or EPUB file</p>
     <div style={{display:"flex",gap:6}}><Tag>PDF</Tag><Tag>EPUB</Tag><Tag>≤ 100 MB</Tag></div>
-  </div>
+    {err&&<p style={{fontFamily:fB,fontSize:12,color:C.dng,marginTop:4,textAlign:"center"}}>{err}</p>}
+  </div>:
+  <div style={{width:"100%",maxWidth:360}}>
+    <div style={{...nC(C),padding:22,display:"flex",flexDirection:"column",alignItems:"center",gap:14}}>
+      <div style={{...nI(C),width:76,height:76,borderRadius:24,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34}}>{file.name.endsWith('.epub')?"📕":"📄"}</div>
+      <div style={{textAlign:"center"}}>
+        <p style={{fontFamily:fD,fontSize:18,fontWeight:700,color:C.tx,margin:"0 0 4px",wordBreak:"break-word"}}>{file.name}</p>
+        <p style={{fontFamily:fM,fontSize:12,color:C.tx3}}>{(file.size/1024/1024).toFixed(1)} MB</p>
+      </div>
+      <button onClick={handleStart} style={{...nB(C),width:"100%",padding:"14px 0",fontFamily:fD,fontSize:16,fontWeight:700,color:C.acc}}>
+        🧠 Start AI Extraction →
+      </button>
+      <button onClick={()=>{setFile(null);setErr("");}} style={{...nB(C),width:"100%",padding:"10px 0",fontFamily:fB,fontSize:13,fontWeight:600,color:C.tx3}}>
+        Choose different file
+      </button>
+    </div>
+  </div>}
 </div>;}
-
+ 
 /* ── PROCESSING ── */
-function Proc({onNav,onSel}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+function Proc({onNav,onSel,fileName}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const name=fileName||"Your Book";
 const[st,setSt]=useState(0);
-const stages=[{icon:"📄",lb:"Parsing PDF…",sub:"Extracting text from 312 pages"},{icon:"📑",lb:"Detecting chapters…",sub:"Found 20 chapters via table of contents"},{icon:"🧠",lb:"AI extraction running…",sub:"Gemma 4 processing Ch. 3 of 20"},{icon:"🗺️",lb:"Building mind maps…",sub:"Generating visual structure for each chapter"},{icon:"🔍",lb:"Indexing for Q&A…",sub:"Creating embeddings for intelligent search"},{icon:"✅",lb:"Complete!",sub:"Atomic Habits is ready to explore"}];
+const stages=[
+  {icon:"📄",lb:"Parsing file…",sub:`Extracting text from ${name}`},
+  {icon:"📑",lb:"Detecting chapters…",sub:"Scanning for chapter boundaries via TOC and headings"},
+  {icon:"🧠",lb:"AI extraction running…",sub:"Gemma 4 extracting ideas, quotes, stories, stats…"},
+  {icon:"🗺️",lb:"Building mind maps…",sub:"Generating visual structure for each chapter"},
+  {icon:"🔍",lb:"Indexing for Q&A…",sub:"Creating embeddings for intelligent search"},
+  {icon:"✅",lb:"Complete!",sub:`${name} is ready to explore`},
+];
 const started=useRef(false);
-if(!started.current){started.current=true;let i=0;const tick=()=>{if(i<stages.length-1){i++;setSt(i);if(i<stages.length-1)setTimeout(tick,1500);}};setTimeout(tick,1500);}
+if(!started.current){started.current=true;let i=0;const tick=()=>{if(i<stages.length-1){i++;setSt(i);if(i<stages.length-1)setTimeout(tick,1800);}};setTimeout(tick,1800);}
 return<div style={{padding:20,display:"flex",flexDirection:"column",alignItems:"center",flex:1,justifyContent:"center"}}>
   <div style={{width:"100%",maxWidth:360}}>
     <div style={{textAlign:"center",marginBottom:24}}>
@@ -238,10 +278,11 @@ return<div style={{padding:20,display:"flex",flexDirection:"column",alignItems:"
         <span style={{fontFamily:fB,fontSize:12,color:i<=st?C.tx:C.tx3,fontWeight:i===st?700:400}}>{s.lb}</span>
       </div>)}
     </div>
-    {st===stages.length-1&&<button onClick={()=>{onSel(BOOKS[0]);onNav(S.OV);}} style={{...nB(C),width:"100%",marginTop:20,padding:"14px 0",fontSize:15,fontWeight:700,color:C.acc,fontFamily:fD}}>Explore Book →</button>}
+    <p style={{fontFamily:fM,fontSize:11,color:C.tx3,textAlign:"center",marginTop:14}}>This is a prototype demo — actual AI processing requires Gemma 4 setup</p>
+    {st===stages.length-1&&<button onClick={()=>{onSel(BOOKS[0]);onNav(S.OV);}} style={{...nB(C),width:"100%",marginTop:16,padding:"14px 0",fontSize:15,fontWeight:700,color:C.acc,fontFamily:fD}}>Explore Demo Breakdown →</button>}
   </div>
 </div>;}
-
+ 
 /* ── OVERVIEW ── */
 function Ov({book,onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
 return<div style={{padding:20}}>
@@ -273,7 +314,7 @@ return<div style={{padding:20}}>
     ))}
   </div>
 </div>;}
-
+ 
 /* ── CHAPTER BREAKDOWN ── */
 function Ch(){const{dk}=useT();const C=dk?TH.dark:TH.light;
 const[tab,sTab]=useState("all");const d=CHD;
@@ -337,7 +378,7 @@ return<div style={{padding:20}}>
     </div>;
   })}
 </div>;}
-
+ 
 /* ── MIND MAP ── */
 function MM(){const{dk}=useT();const C=dk?TH.dark:TH.light;
 const d=MMAP;const cx=300,cy=230,r1=120,r2=210;
@@ -376,12 +417,20 @@ return<div style={{padding:20}}>
   </div>
   <p style={{fontFamily:fB,fontSize:12,color:C.tx3,textAlign:"center",marginTop:10}}>Each node maps to a page-range section in the chapter breakdown</p>
 </div>;}
-
+ 
 /* ── Q&A ── */
 function QA(){const{dk}=useT();const C=dk?TH.dark:TH.light;
 const[inp,sInp]=useState("");const[msgs,sMsgs]=useState(QAI);const[typ,sTyp]=useState(false);
-const send=()=>{if(!inp.trim())return;sMsgs(m=>[...m,{role:"user",text:inp}]);sInp("");sTyp(true);
-  setTimeout(()=>{sMsgs(m=>[...m,{role:"ai",text:"Based on the book, the author addresses this through the lens of compound growth and systems thinking. Clear's central argument in Chapter 1 is that tiny improvements (1% per day) compound exponentially, and that focusing on systems rather than goals produces lasting results. The British Cycling case study demonstrates this — marginal gains in hundreds of small areas created world-class dominance within 5 years. (Chapter 1, pages 15–32)",sources:["Ch. 1, pp. 15–32"]}]);sTyp(false);},2000);
+const send=()=>{if(!inp.trim())return;const q=inp;sMsgs(m=>[...m,{role:"user",text:q}]);sInp("");sTyp(true);
+  const ql=q.toLowerCase();
+  let ans,src;
+  if(ql.includes("goal")||ql.includes("system")){ans="Clear argues that goals don't differentiate winners from losers — every Olympic athlete wants gold. What separates them is the system they follow. He identifies four problems with goals: they're shared by everyone, they create only momentary change, they defer happiness, and they kill motivation once achieved. His takeaway: 'You do not rise to the level of your goals. You fall to the level of your systems.'";src="Ch. 1, pp. 22–27";}
+  else if(ql.includes("british")||ql.includes("cycling")||ql.includes("marginal")||ql.includes("brailsford")){ans="Dave Brailsford transformed British Cycling using the 'aggregation of marginal gains' — finding 1% improvements in everything from bike seats to hand-washing protocols. Within 5 years the team won 60% of cycling golds at Beijing 2008. Within 10 years they dominated the Tour de France.";src="Ch. 1, pp. 26–29";}
+  else if(ql.includes("1%")||ql.includes("compound")||ql.includes("37")){ans="Clear's foundational math: 1% better each day for a year yields 37.78× improvement (1.01^365). Conversely, 1% worse daily leaves you at 0.03. This reframes self-improvement from dramatic overhauls to patient daily consistency.";src="Ch. 1, pp. 15–18";}
+  else if(ql.includes("plateau")||ql.includes("ice")||ql.includes("latent")){ans="The 'Plateau of Latent Potential' is the frustrating period where effort seems wasted because visible results haven't appeared yet. Clear uses the ice cube analogy: heating from 25°F to 31°F shows nothing, but at 32°F everything changes. All prior work was stored, not wasted.";src="Ch. 1, pp. 18–21";}
+  else if(ql.includes("quote")){ans="Key quotes from Chapter 1: 'Habits are the compound interest of self-improvement' (p.16), 'You do not rise to the level of your goals. You fall to the level of your systems.' (p.27), and 'Time magnifies the margin between success and failure.' (p.18)";src="Ch. 1, various";}
+  else{ans="Based on Chapter 1 of Atomic Habits, Clear's central thesis is that small, consistent improvements compound into extraordinary results. He proves this through the 1% rule (37.78× in a year), the Plateau of Latent Potential (why most people quit too early), the systems-over-goals framework, and the British Cycling case study where marginal gains in hundreds of small areas created world-class dominance.";src="Ch. 1, pp. 15–32";}
+  setTimeout(()=>{sMsgs(m=>[...m,{role:"ai",text:ans,sources:[src]}]);sTyp(false);},1800);
 };
 return<div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
   <div style={{padding:"12px 18px",flexShrink:0}}><h2 style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx}}>Ask About This Book</h2><p style={{fontFamily:fB,fontSize:12,color:C.tx3,marginTop:3}}>AI answers sourced from the book, with page references</p></div>
@@ -401,9 +450,9 @@ return<div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden
     <button onClick={send} style={{...nB(C),width:44,height:44,borderRadius:12,fontSize:17,color:C.acc,display:"flex",alignItems:"center",justifyContent:"center"}}>↑</button>
   </div>
 </div>;}
-
+ 
 /* ── DAILY DIGEST ── */
-function Dig(){const{dk}=useT();const C=dk?TH.dark:TH.light;
+function Dig({onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
 return<div style={{padding:20}}>
   <div style={{textAlign:"center",marginBottom:22}}>
     <div style={{fontSize:48,marginBottom:8}}>🔥</div>
@@ -419,7 +468,7 @@ return<div style={{padding:20}}>
     <Tag color={C.warn}>Today's Chapter</Tag>
     <h3 style={{fontFamily:fD,fontSize:18,fontWeight:700,color:C.tx,margin:"10px 0 6px"}}>Ch. 4: The Man Who Didn't Look Right</h3>
     <p style={{fontFamily:fQ,fontSize:13,color:C.tx2,lineHeight:1.65,fontStyle:"italic",marginBottom:14}}>This chapter explores how habits become automatic through pattern recognition. Clear tells the story of a museum curator who could spot art forgeries at a glance…</p>
-    <button style={{...nB(C),width:"100%",padding:"12px 0",fontFamily:fD,fontSize:15,fontWeight:700,color:C.acc}}>Read Chapter Breakdown →</button>
+    <button onClick={()=>onNav(S.CH)} style={{...nB(C),width:"100%",padding:"12px 0",fontFamily:fD,fontSize:15,fontWeight:700,color:C.acc}}>Read Chapter Breakdown →</button>
   </div>
   <div style={{...nI(C),padding:16,borderRadius:16}}>
     <h4 style={{fontFamily:fB,fontSize:14,fontWeight:700,color:C.tx,margin:"0 0 8px"}}>📊 Quick Quiz — Chapter 3 Recap</h4>
@@ -431,7 +480,7 @@ return<div style={{padding:20}}>
     ))}
   </div>
 </div>;}
-
+ 
 /* ── EXPORT ── */
 function Exp(){const{dk}=useT();const C=dk?TH.dark:TH.light;
 const[sel,sSel]=useState(new Set([0,1,2,3]));const[exp,sExp]=useState(false);const[done,sDone]=useState(false);
@@ -458,35 +507,48 @@ return<div style={{padding:20}}>
     {exp?"Generating document…":`Export ${sel.size} Chapters as .docx`}
   </button>}
 </div>;}
-
+ 
 /* ── APP SHELL ── */
 function App(){
   const[scr,setScr]=useState(S.LIB);
   const[book,setBook]=useState(null);
   const[dk,setDk]=useState(false);
+  const[fileName,setFileName]=useState("");
   const ref=useRef(null);
   const nav=useCallback(s=>{setScr(s);ref.current?.scrollTo(0,0);},[]);
   const C=dk?TH.dark:TH.light;
-  return<Ctx.Provider value={{dk,tog:()=>setDk(d=>!d)}}>
+  const toggleDk=()=>{setDk(d=>{
+    const next=!d;
+    document.body.style.background=next?TH.dark.bg:TH.light.bg;
+    const meta=document.querySelector('meta[name="theme-color"]');
+    if(meta)meta.setAttribute('content',next?TH.dark.bg:TH.light.bg);
+    return next;
+  });};
+  const safeNav=s=>{
+    if((s===S.MM||s===S.QA||s===S.DIG||s===S.EXP)&&!book){setScr(S.LIB);return;}
+    nav(s);
+  };
+  return<Ctx.Provider value={{dk,tog:toggleDk}}>
     <div style={{maxWidth:440,margin:"0 auto",background:C.bg,height:"100vh",display:"flex",flexDirection:"column",transition:"background .3s"}}>
       <Nav scr={scr} onNav={nav} sub={book?.title&&scr!==S.LIB?book.title:null}/>
       <div ref={ref} style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
         {scr===S.LIB&&<Lib onNav={nav} onSel={setBook}/>}
-        {scr===S.UP&&<Upload onNav={nav}/>}
-        {scr===S.PROC&&<Proc onNav={nav} onSel={setBook}/>}
+        {scr===S.UP&&<Upload onNav={nav} onFile={setFileName}/>}
+        {scr===S.PROC&&<Proc onNav={nav} onSel={setBook} fileName={fileName}/>}
         {scr===S.OV&&book&&<Ov book={book} onNav={nav}/>}
         {scr===S.CH&&<Ch/>}
         {scr===S.MM&&<MM/>}
         {scr===S.QA&&<QA/>}
-        {scr===S.DIG&&<Dig/>}
+        {scr===S.DIG&&<Dig onNav={nav}/>}
         {scr===S.EXP&&<Exp/>}
       </div>
-      <Bar scr={scr} onNav={nav}/>
+      <Bar scr={scr} onNav={safeNav}/>
     </div>
   </Ctx.Provider>;
 }
-
+ 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
+ 
