@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="theme-color" content="#E8E0D4"/>
+<title>BookBrain — AI Book Understanding</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Nunito:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;-webkit-tap-highlight-color:transparent}
+  body{font-family:'Nunito',sans-serif;background:#E8E0D4}
+  #root{height:100%;display:flex;flex-direction:column}
+  details summary{list-style:none}
+  details summary::-webkit-details-marker{display:none}
+  input::placeholder{color:inherit;opacity:.5}
+  ::-webkit-scrollbar{width:4px}
+  ::-webkit-scrollbar-thumb{background:rgba(139,105,20,.2);border-radius:4px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useCallback,useRef,createContext,useContext}=React;
+
+/* ── THEMES ── */
+const TH={
+  light:{bg:"#E8E0D4",bgL:"#F0E8DC",bgD:"#D8D0C4",shL:"#F5EDE1",shD:"#C4BCA8",acc:"#8B6914",accL:"#A6841E",accS:"rgba(139,105,20,.12)",tx:"#2C2416",tx2:"#6B5D4A",tx3:"#9A8B74",ok:"#5A7A4A",okS:"rgba(90,122,74,.15)",warn:"#B8860B",qt:"#7B5B2A",dng:"#A0422A"},
+  dark:{bg:"#1E1E2A",bgL:"#272738",bgD:"#16161F",shL:"#2A2A3C",shD:"#111118",acc:"#D4A843",accL:"#E0BC5A",accS:"rgba(212,168,67,.15)",tx:"#E8E2D8",tx2:"#B0A898",tx3:"#787068",ok:"#7AAE5E",okS:"rgba(122,174,94,.18)",warn:"#E0A830",qt:"#C49A4A",dng:"#D06040"}
+};
+const Ctx=createContext();
+const useT=()=>useContext(Ctx);
+const fD="'Cormorant Garamond',serif",fB="'Nunito',sans-serif",fM="'JetBrains Mono',monospace",fQ="'Playfair Display',serif";
+
+/* ── NEU HELPERS ── */
+const sh=(C,ins=false,i=1)=>{const d=Math.round(6*i),b=Math.round(12*i);return ins?`inset ${d}px ${d}px ${b}px ${C.shD},inset -${d}px -${d}px ${b}px ${C.shL}`:`${d}px ${d}px ${b}px ${C.shD},-${d}px -${d}px ${b}px ${C.shL}`;};
+const shP=C=>`inset 3px 3px 6px ${C.shD},inset -3px -3px 6px ${C.shL}`;
+const nC=C=>({background:C.bg,borderRadius:20,boxShadow:sh(C),border:"none"});
+const nI=C=>({background:C.bg,borderRadius:16,boxShadow:sh(C,true),border:"none"});
+const nB=C=>({background:C.bg,borderRadius:14,boxShadow:sh(C,false,.7),border:"none",cursor:"pointer",transition:"all .15s",fontFamily:fB});
+
+/* ── SCREENS ── */
+const S={LIB:0,UP:1,PROC:2,OV:3,CH:4,MM:5,QA:6,DIG:7,EXP:8};
+
+/* ── MOCK DATA ── */
+const BOOKS=[
+  {id:1,title:"Atomic Habits",author:"James Clear",chapters:20,progress:65,emoji:"📗"},
+  {id:2,title:"Deep Work",author:"Cal Newport",chapters:14,progress:30,emoji:"📘"},
+  {id:3,title:"Thinking, Fast and Slow",author:"Daniel Kahneman",chapters:38,progress:0,emoji:"📙",proc:true},
+];
+
+const CHS=[
+  {n:1,title:"The Surprising Power of Atomic Habits",done:true,pages:"pp. 15–32"},
+  {n:2,title:"How Your Habits Shape Your Identity",done:true,pages:"pp. 33–49"},
+  {n:3,title:"How to Build Better Habits in 4 Simple Steps",done:true,pages:"pp. 50–68"},
+  {n:4,title:"The Man Who Didn't Look Right",done:false,pages:"pp. 69–82"},
+  {n:5,title:"The Best Way to Start a New Habit",done:false,pages:"pp. 83–96"},
+  {n:6,title:"Motivation Is Overrated; Environment Often Matters More",done:false,pages:"pp. 97–112"},
+];
+
+const CHD={
+  title:"Chapter 1: The Surprising Power of Atomic Habits",
+  pageRange:"Pages 15–32",
+  summary:"James Clear opens the book with a compelling argument: small changes, consistently applied, compound into extraordinary results. He introduces the foundational concept of 'atomic habits' — behaviors so small they seem insignificant, yet form the building blocks of remarkable achievement. The chapter moves from personal anecdote to mathematical proof to real-world case study, establishing the book's central thesis.",
+  sections:[
+    {
+      pageRange:"Pages 15–18",heading:"Opening: The Author's Personal Story & the 1% Rule",
+      ideas:[
+        {text:"Clear begins with his own story — a high school baseball injury that left him in a coma, and the years-long recovery process where tiny daily improvements rebuilt his life and eventually made him an academic and athletic achiever at Denison University.",detail:"This personal narrative grounds the entire book in lived experience, not abstract theory. He went from barely functional to team captain by focusing on small, controllable actions daily."},
+        {text:"The 1% improvement rule: if you get 1% better each day, you'll end up 37.78 times better after one year (1.01^365 = 37.78). Conversely, getting 1% worse each day shrinks you to nearly zero (0.99^365 = 0.03).",detail:"This mathematical framing is the book's most viral concept. It reframes self-improvement from dramatic overhauls to patient consistency."},
+      ],
+      quotes:[{text:"Habits are the compound interest of self-improvement.",p:16},{text:"The same way that money multiplies through compound interest, the effects of your habits multiply as you repeat them.",p:16}],
+      stats:[{fig:"37.78×",note:"The compound result of 1% daily improvement over 365 days. Clear uses this as the mathematical backbone of the 'atomic' philosophy — small is not insignificant, it's exponential.",p:16}],
+      stories:[],
+      actions:["Calculate your own '1% today' — identify one tiny improvement you can make in the next hour."],
+      terms:[{t:"Atomic Habit",d:"A tiny, regular practice or routine that is both small and mighty — a component of a larger system of compound growth. 'Atomic' refers to both the small size and the enormous power."}],
+    },
+    {
+      pageRange:"Pages 18–21",heading:"Why Small Habits Don't Seem to Matter — Until They Do",
+      ideas:[
+        {text:"Clear introduces the concept of the 'Plateau of Latent Potential' — the frustrating period where effort seems wasted because results haven't materialized yet. Most people quit during this phase.",detail:"He compares this to an ice cube sitting in a cold room. You raise the temperature from 25°F to 31°F and nothing happens. At 32°F, the ice begins to melt. All the earlier work wasn't wasted — it was stored."},
+        {text:"Results are a lagging indicator of habits. Your current body is a lagging indicator of eating habits. Your bank account is a lagging indicator of financial habits. Your knowledge is a lagging indicator of learning habits.",detail:"This reframing is critical: it separates the feeling of progress (which is absent early on) from the reality of progress (which is accumulating invisibly)."},
+        {text:"Complaining about not achieving success despite hard work is like complaining about an ice cube not melting when you heated it from 25° to 31°. Your work was not wasted — it is being stored.",detail:"Clear's point: breakthrough moments are the result of many previous actions, not sudden events."},
+      ],
+      quotes:[{text:"When nothing seems to help, I go and look at a stonecutter hammering away at his rock, perhaps a hundred times without as much as a crack showing in it. Yet at the hundred and first blow it splits in two.",p:19},{text:"Time magnifies the margin between success and failure. It will multiply whatever you feed it.",p:18}],
+      stats:[],
+      stories:[
+        {title:"The Ice Cube Analogy",detail:"Imagine a room at 25°F. An ice cube sits on the table. You slowly raise the temperature: 26, 27, 28… nothing happens until 32°F, when the ice finally begins to melt. The previous degrees weren't pointless — they were prerequisites. Habits work identically.",p:20},
+        {title:"The Stonecutter Parable (Jacob Riis)",detail:"Clear quotes Jacob Riis's famous stonecutter metaphor: the stone splits not because of the 101st blow alone, but because of all 100 that came before. This reframes 'overnight success' as accumulated invisible effort.",p:19},
+      ],
+      actions:["Identify one area where you've quit because results felt too slow — reframe it as being in the 'Plateau of Latent Potential'.","Write down one lagging indicator in your life and trace it back to the habit (or lack thereof) that created it."],
+      terms:[
+        {t:"Plateau of Latent Potential",d:"The valley between starting a habit and seeing visible results. During this phase, effort is stored but not yet visible — leading most people to quit prematurely."},
+        {t:"Lagging Indicator",d:"A measure that reflects the cumulative result of past behaviors, not current effort. Weight, wealth, and knowledge are all lagging indicators of their respective habits."},
+      ],
+    },
+    {
+      pageRange:"Pages 22–25",heading:"Forget Goals, Focus on Systems",
+      ideas:[
+        {text:"Clear makes a controversial claim: goals are not what differentiate winners from losers. Winners and losers have the same goals — every Olympic athlete wants to win gold. What separates them is the system they follow.",detail:"This challenges the entire goal-setting industry. The implication: stop obsessing over the destination and start engineering the daily process."},
+        {text:"Four problems with goal-oriented thinking: (1) Winners and losers share the same goals. (2) Achieving a goal is only a momentary change. (3) Goals restrict happiness ('I'll be happy when…'). (4) Goals conflict with long-term progress — once achieved, motivation disappears.",detail:"Each problem is explored with a specific example, making this section the most tactical argument in the chapter."},
+        {text:"A systems-first mentality provides the antidote: you don't rise to the level of your goals, you fall to the level of your systems.",detail:"This is perhaps the single most quoted line from the book and encapsulates its entire philosophy."},
+      ],
+      quotes:[{text:"You do not rise to the level of your goals. You fall to the level of your systems.",p:27},{text:"Goals are good for setting a direction, but systems are best for making progress.",p:23},{text:"The purpose of setting goals is to win the game. The purpose of building systems is to continue playing the game.",p:25}],
+      stats:[],
+      stories:[{title:"The Gold Medal Paradox",detail:"Every Olympian at the starting line has the same goal: win gold. If the goal alone determined the outcome, every competitor would succeed equally. The difference is always the training system — the daily process, recovery protocol, and coaching methodology behind the performance.",p:24}],
+      actions:["Write down your top 3 goals. For each one, describe the system (daily process) that would lead to that outcome.","Ask yourself: 'If I completely forgot my goals but kept following my current daily system, would I still get results?'"],
+      terms:[{t:"System",d:"The collection of daily habits, routines, and processes that move you toward or away from an outcome — as opposed to a goal, which is a one-time target."}],
+    },
+    {
+      pageRange:"Pages 26–29",heading:"The Aggregation of Marginal Gains (British Cycling)",
+      ideas:[
+        {text:"Clear introduces the most memorable case study in the book: how Dave Brailsford transformed British Cycling from a laughing stock into the most dominant team in history — through the 'aggregation of marginal gains.'",detail:"Brailsford sought a 1% improvement in everything the team did, no matter how small or seemingly irrelevant."},
+        {text:"The improvements were absurdly small: redesigned bike seats, different massage gels, hand-washing protocols to avoid illness, team truck floor painted white to spot dust affecting bike maintenance.",detail:"No single improvement was significant. Stacked together, they created an unbeatable system."},
+        {text:"Within 5 years, British Cycling dominated the 2008 Beijing Olympics. Within 10 years, Bradley Wiggins became the first British Tour de France winner (2012), followed by Chris Froome winning four of the next five.",detail:"This case study is the chapter's proof-of-concept that 1% gains, compounded, create world-class results."},
+      ],
+      quotes:[{text:"The whole principle came from the idea that if you broke down everything you could think of that goes into riding a bike, and then improve it by 1 percent, you will get a significant increase when you put them all together.",p:27}],
+      stats:[
+        {fig:"5 years",note:"Time for British Cycling to go from near-zero Olympic medals to total domination at Beijing 2008, using only the aggregation of marginal gains.",p:28},
+        {fig:"10 golds",note:"British cyclists won 10 gold medals at Beijing 2008 — a transformation entirely attributed to Brailsford's marginal gains philosophy.",p:28},
+        {fig:"60%",note:"Of the gold medals available in cycling at the 2008 Olympics were won by the British team, a historically unprecedented dominance.",p:28},
+      ],
+      stories:[{title:"The British Cycling Transformation",detail:"When Dave Brailsford became performance director in 2003, British Cycling had won a single Olympic gold in its entire 100-year history. His approach: find 1% improvements in hundreds of small areas. Bike seat ergonomics. Pillow types for better sleep. Hand-washing protocols. Heated overshorts. Truck floor painted white. Within 5 years: 60% of cycling golds at Beijing. Within a decade: Tour de France champions.",p:"26–29"}],
+      actions:["List 10 small things in your daily routine (sleep, commute, meals, work setup). For each, identify one 1% improvement.","Pick the 3 easiest improvements from your list and implement them this week."],
+      terms:[{t:"Aggregation of Marginal Gains",d:"The philosophy of searching for a tiny margin of improvement in everything you do. Hundreds of small improvements, each worth perhaps 1%, compound into a formidable collective advantage."}],
+    },
+    {
+      pageRange:"Pages 29–32",heading:"Chapter Summary & The Road Ahead",
+      ideas:[
+        {text:"Clear synthesizes the chapter's argument: (1) Habits are compound interest. (2) Small changes appear meaningless in the moment but deliver extraordinary results over time. (3) Forget goals — build systems. (4) You don't need to overhaul your life, you need better habits.",detail:"This closing section bridges to the rest of the book, which will teach the tactical 'how' of building these atomic habits."},
+        {text:"The chapter ends with a forward-looking promise: the remaining chapters will teach a four-step framework (Cue → Craving → Response → Reward) and show exactly how to design habits using each step.",detail:"This sets up the reader for the 'Four Laws of Behavior Change' framework that structures the rest of the book."},
+      ],
+      quotes:[{text:"If you want better results, then forget about setting goals. Focus on your system instead.",p:31}],
+      stats:[],stories:[],
+      actions:["Before reading Chapter 2, write a one-sentence answer: 'What system am I currently running that produced my current results?'"],
+      terms:[{t:"Four Laws of Behavior Change",d:"The tactical framework introduced in the next chapters: Make It Obvious, Make It Attractive, Make It Easy, Make It Satisfying — the four levers for building any habit."}],
+    },
+  ],
+};
+
+const MMAP={
+  center:"Ch.1: Atomic Habits",
+  branches:[
+    {label:"1% Rule",lc:"#8B6914",dc:"#D4A843",ch:["37× / year","Compound growth","Math proof"]},
+    {label:"Systems > Goals",lc:"#5A7A4A",dc:"#7AAE5E",ch:["Same goals fallacy","Process over outcome","Long-term play"]},
+    {label:"Plateau of\nLatent Potential",lc:"#7B5B2A",dc:"#C49A4A",ch:["Ice cube analogy","Invisible progress","Don't quit early"]},
+    {label:"Marginal Gains",lc:"#A0422A",dc:"#D06040",ch:["British Cycling","1% everywhere","5yr transform"]},
+  ],
+};
+
+const QAI=[
+  {role:"user",text:"What does the author say about goals vs systems?"},
+  {role:"ai",text:"Clear argues that goals are inadequate for lasting change because winners and losers typically share identical goals — every Olympic athlete wants gold. The differentiator is always the system: the daily process of training, recovery, and refinement. He identifies four specific problems with goal-oriented thinking: they don't distinguish you from competitors, achieving one creates only momentary change, they defer happiness to a future condition, and they remove motivation once reached. His conclusion: 'You do not rise to the level of your goals. You fall to the level of your systems.' (Chapter 1, pages 22–27)",sources:["Ch. 1, pp. 22–27"]},
+];
+
+/* ── SHARED COMPONENTS ── */
+function ThemeToggle(){const{dk,tog}=useT();const C=dk?TH.dark:TH.light;return<button onClick={tog} aria-label="Toggle dark mode" style={{...nB(C),width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:C.acc}}>{dk?"☀️":"🌙"}</button>;}
+
+function Nav({scr,onNav,sub}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+return<div style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:10,background:C.bg,boxShadow:`0 2px 8px ${C.shD}`,zIndex:100,flexShrink:0}}>
+  {scr!==S.LIB&&<button onClick={()=>onNav(sub?S.OV:S.LIB)} style={{...nB(C),width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:C.acc}}>←</button>}
+  <div style={{flex:1}}><div style={{fontFamily:fD,fontSize:24,fontWeight:700,color:C.acc,letterSpacing:.3}}>BookBrain</div></div>
+  {sub&&<span style={{fontFamily:fB,fontSize:11,color:C.tx3,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</span>}
+  <ThemeToggle/>
+</div>;}
+
+function Bar({scr,onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const items=[{s:S.LIB,icon:"📚",lb:"Library"},{s:S.DIG,icon:"📅",lb:"Daily"},{s:S.EXP,icon:"📤",lb:"Export"}];
+return<div style={{display:"flex",padding:"8px 16px 10px",background:C.bg,boxShadow:`0 -2px 8px ${C.shD}`,flexShrink:0}}>
+  {items.map(t=><button key={t.s} onClick={()=>onNav(t.s)} style={{flex:1,padding:"8px 0",background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+    <span style={{fontSize:18}}>{t.icon}</span>
+    <span style={{fontFamily:fB,fontSize:11,color:scr===t.s?C.acc:C.tx3,fontWeight:scr===t.s?700:400}}>{t.lb}</span>
+  </button>)}
+</div>;}
+
+function Tag({children,color}){const{dk}=useT();const C=dk?TH.dark:TH.light;const c=color||C.acc;return<span style={{display:"inline-block",padding:"4px 12px",borderRadius:20,fontFamily:fB,fontSize:11,fontWeight:600,color:c,background:`${c}15`,marginRight:6,marginBottom:4}}>{children}</span>;}
+
+function Prog({value,color}){const{dk}=useT();const C=dk?TH.dark:TH.light;const c=color||C.acc;return<div style={{...nI(C),height:8,borderRadius:8,overflow:"hidden",padding:0}}><div style={{width:`${value}%`,height:"100%",borderRadius:8,background:`linear-gradient(90deg,${c},${C.accL})`,transition:"width .6s"}}/></div>;}
+
+/* ── LIBRARY ── */
+function Lib({onNav,onSel}){const{dk}=useT();const C=dk?TH.dark:TH.light;const[q,sQ]=useState("");
+return<div style={{padding:20}}>
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+    <div><h1 style={{fontFamily:fD,fontSize:28,fontWeight:700,color:C.tx}}>My Library</h1>
+    <p style={{fontFamily:fB,fontSize:12,color:C.tx3,marginTop:4}}>{BOOKS.length} books · {BOOKS.reduce((a,b)=>a+b.chapters,0)} chapters extracted</p></div>
+    <button onClick={()=>onNav(S.UP)} style={{...nB(C),width:46,height:46,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,color:C.acc}}>+</button>
+  </div>
+  <div style={{...nI(C),padding:0,marginBottom:18}}><input value={q} onChange={e=>sQ(e.target.value)} placeholder="Search your books..." style={{width:"100%",padding:"13px 18px",borderRadius:16,border:"none",background:"transparent",color:C.tx,fontFamily:fB,fontSize:14,outline:"none",boxSizing:"border-box"}}/></div>
+  <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    {BOOKS.filter(b=>b.title.toLowerCase().includes(q.toLowerCase())).map(b=>(
+      <div key={b.id} onClick={()=>{onSel(b);onNav(S.OV);}} style={{...nC(C),padding:18,cursor:"pointer",display:"flex",gap:14,alignItems:"center"}}>
+        <div style={{...nI(C),width:54,height:68,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>{b.emoji}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <h3 style={{fontFamily:fD,fontSize:17,fontWeight:700,color:C.tx,margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.title}</h3>
+          <p style={{fontFamily:fB,fontSize:12,color:C.tx3,margin:"3px 0 8px"}}>{b.author} · {b.chapters} ch.</p>
+          <Prog value={b.progress} color={b.proc?C.warn:C.acc}/>
+          <span style={{fontFamily:fM,fontSize:11,color:b.proc?C.warn:C.tx3,marginTop:4,display:"block"}}>{b.proc?"Processing…":`${b.progress}% explored`}</span>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>;}
+
+/* ── UPLOAD ── */
+function Upload({onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+return<div style={{padding:20,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1}}>
+  <div onClick={()=>onNav(S.PROC)} style={{...nC(C),width:"100%",maxWidth:360,height:240,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,cursor:"pointer"}}>
+    <div style={{...nI(C),width:76,height:76,borderRadius:24,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34}}>📄</div>
+    <p style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx}}>Drop your book here</p>
+    <p style={{fontFamily:fB,fontSize:13,color:C.tx3}}>or tap to browse files</p>
+    <div style={{display:"flex",gap:6}}><Tag>PDF</Tag><Tag>EPUB</Tag><Tag>≤ 100 MB</Tag></div>
+  </div>
+</div>;}
+
+/* ── PROCESSING ── */
+function Proc({onNav,onSel}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const[st,setSt]=useState(0);
+const stages=[{icon:"📄",lb:"Parsing PDF…",sub:"Extracting text from 312 pages"},{icon:"📑",lb:"Detecting chapters…",sub:"Found 20 chapters via table of contents"},{icon:"🧠",lb:"AI extraction running…",sub:"Gemma 4 processing Ch. 3 of 20"},{icon:"🗺️",lb:"Building mind maps…",sub:"Generating visual structure for each chapter"},{icon:"🔍",lb:"Indexing for Q&A…",sub:"Creating embeddings for intelligent search"},{icon:"✅",lb:"Complete!",sub:"Atomic Habits is ready to explore"}];
+const started=useRef(false);
+if(!started.current){started.current=true;let i=0;const tick=()=>{if(i<stages.length-1){i++;setSt(i);if(i<stages.length-1)setTimeout(tick,1500);}};setTimeout(tick,1500);}
+return<div style={{padding:20,display:"flex",flexDirection:"column",alignItems:"center",flex:1,justifyContent:"center"}}>
+  <div style={{width:"100%",maxWidth:360}}>
+    <div style={{textAlign:"center",marginBottom:24}}>
+      <div style={{fontSize:48,marginBottom:10}}>{stages[st].icon}</div>
+      <h2 style={{fontFamily:fD,fontSize:22,fontWeight:700,color:C.tx,margin:"0 0 4px"}}>{stages[st].lb}</h2>
+      <p style={{fontFamily:fB,fontSize:13,color:C.tx3}}>{stages[st].sub}</p>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {stages.map((s,i)=><div key={i} style={{...(i===st?nC(C):i<st?{...nC(C),boxShadow:sh(C,true,.5)}:{opacity:.4}),padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:14,width:22,textAlign:"center"}}>{i<st?"✓":s.icon}</span>
+        <span style={{fontFamily:fB,fontSize:12,color:i<=st?C.tx:C.tx3,fontWeight:i===st?700:400}}>{s.lb}</span>
+      </div>)}
+    </div>
+    {st===stages.length-1&&<button onClick={()=>{onSel(BOOKS[0]);onNav(S.OV);}} style={{...nB(C),width:"100%",marginTop:20,padding:"14px 0",fontSize:15,fontWeight:700,color:C.acc,fontFamily:fD}}>Explore Book →</button>}
+  </div>
+</div>;}
+
+/* ── OVERVIEW ── */
+function Ov({book,onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+return<div style={{padding:20}}>
+  <div style={{...nC(C),padding:18,display:"flex",gap:16,marginBottom:18}}>
+    <div style={{...nI(C),width:68,height:90,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,flexShrink:0}}>{book.emoji}</div>
+    <div><h1 style={{fontFamily:fD,fontSize:22,fontWeight:700,color:C.tx,lineHeight:1.2}}>{book.title}</h1>
+    <p style={{fontFamily:fB,fontSize:12,color:C.tx3,margin:"4px 0 8px"}}>by {book.author}</p>
+    <Tag>{book.chapters} Chapters</Tag><Tag color={C.ok}>{book.progress}%</Tag></div>
+  </div>
+  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+    {[{icon:"🗺️",lb:"Mind Map",s:S.MM},{icon:"💬",lb:"Ask Q&A",s:S.QA},{icon:"📅",lb:"Daily Digest",s:S.DIG},{icon:"📤",lb:"Export .docx",s:S.EXP}].map(a=>(
+      <button key={a.lb} onClick={()=>onNav(a.s)} style={{...nB(C),padding:"16px 10px",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+        <span style={{fontSize:22}}>{a.icon}</span>
+        <span style={{fontFamily:fB,fontSize:13,fontWeight:600,color:C.tx}}>{a.lb}</span>
+      </button>
+    ))}
+  </div>
+  <h2 style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx,margin:"0 0 12px"}}>Chapters</h2>
+  <div style={{display:"flex",flexDirection:"column",gap:10}}>
+    {CHS.map(ch=>(
+      <div key={ch.n} onClick={()=>onNav(S.CH)} style={{...nC(C),padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
+        <div style={{...(ch.done?nI(C):nC(C)),width:34,height:34,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontFamily:fM,fontWeight:700,color:ch.done?C.ok:C.tx3,flexShrink:0}}>{ch.done?"✓":ch.n}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <span style={{fontFamily:fB,fontSize:13,color:C.tx,fontWeight:500,display:"block"}}>{ch.title}</span>
+          <span style={{fontFamily:fM,fontSize:11,color:C.tx3}}>{ch.pages}</span>
+        </div>
+        <span style={{color:C.tx3}}>›</span>
+      </div>
+    ))}
+  </div>
+</div>;}
+
+/* ── CHAPTER BREAKDOWN ── */
+function Ch(){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const[tab,sTab]=useState("all");const d=CHD;
+const tabs=[{id:"all",lb:"All",ic:"📋"},{id:"ideas",lb:"Ideas",ic:"💡"},{id:"quotes",lb:"Quotes",ic:"✦"},{id:"stories",lb:"Stories",ic:"📖"},{id:"stats",lb:"Stats",ic:"📊"},{id:"actions",lb:"Actions",ic:"✅"},{id:"terms",lb:"Terms",ic:"🏷️"}];
+const[ck,sCk]=useState({});
+return<div style={{padding:20}}>
+  <h1 style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx,margin:"0 0 4px",lineHeight:1.3}}>{d.title}</h1>
+  <p style={{fontFamily:fM,fontSize:11,color:C.tx3,margin:"0 0 12px"}}>{d.pageRange}</p>
+  <div style={{...nI(C),padding:14,borderRadius:16,marginBottom:16}}>
+    <p style={{fontFamily:fQ,fontSize:14,color:C.tx2,lineHeight:1.7,fontStyle:"italic",margin:0}}>{d.summary}</p>
+  </div>
+  <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:6,marginBottom:16,WebkitOverflowScrolling:"touch"}}>
+    {tabs.map(t=><button key={t.id} onClick={()=>sTab(t.id)} style={{...(tab===t.id?{...nB(C),boxShadow:shP(C)}:nB(C)),padding:"6px 12px",fontSize:12,fontWeight:600,color:tab===t.id?C.acc:C.tx3,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4,flexShrink:0}}>{t.ic} {t.lb}</button>)}
+  </div>
+  {d.sections.map((sec,si)=>{
+    const has=(tab==="all")||(tab==="ideas"&&sec.ideas.length)||(tab==="quotes"&&sec.quotes.length)||(tab==="stories"&&sec.stories.length)||(tab==="stats"&&sec.stats.length)||(tab==="actions"&&sec.actions.length)||(tab==="terms"&&sec.terms.length);
+    if(!has)return null;
+    return<div key={si} style={{marginBottom:22}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+        <div style={{...nI(C),padding:"4px 10px",borderRadius:10}}><span style={{fontFamily:fM,fontSize:11,fontWeight:700,color:C.acc}}>{sec.pageRange}</span></div>
+        <span style={{fontFamily:fD,fontSize:15,fontWeight:700,color:C.tx}}>{sec.heading}</span>
+      </div>
+      {(tab==="all"||tab==="ideas")&&sec.ideas.map((x,i)=>(
+        <details key={`i${si}${i}`} style={{...nC(C),overflow:"hidden",marginBottom:8}}>
+          <summary style={{padding:"12px 16px",fontFamily:fB,fontSize:13,fontWeight:600,color:C.tx,cursor:"pointer",display:"flex",gap:8,lineHeight:1.5}}><span style={{color:C.acc,flexShrink:0}}>💡</span>{x.text}</summary>
+          <div style={{padding:"0 16px 12px 40px"}}><p style={{fontFamily:fQ,fontSize:13,color:C.tx2,lineHeight:1.7,fontStyle:"italic",margin:0}}>{x.detail}</p></div>
+        </details>
+      ))}
+      {(tab==="all"||tab==="quotes")&&sec.quotes.map((x,i)=>(
+        <div key={`q${si}${i}`} style={{...nI(C),padding:"12px 16px",marginBottom:8,borderLeft:`3px solid ${C.qt}`,borderRadius:"4px 14px 14px 4px"}}>
+          <p style={{fontFamily:fQ,fontSize:15,color:C.tx,fontStyle:"italic",lineHeight:1.6,margin:"0 0 4px"}}>"{x.text}"</p>
+          <span style={{fontFamily:fM,fontSize:11,color:C.tx3}}>— p. {x.p}</span>
+        </div>
+      ))}
+      {(tab==="all"||tab==="stories")&&sec.stories.map((x,i)=>(
+        <details key={`s${si}${i}`} style={{...nC(C),overflow:"hidden",marginBottom:8}}>
+          <summary style={{padding:"12px 16px",fontFamily:fB,fontSize:13,fontWeight:600,color:C.tx,cursor:"pointer"}}><span style={{marginRight:6}}>📖</span>{x.title}{x.p&&<span style={{fontFamily:fM,fontSize:11,color:C.tx3,marginLeft:8}}>p.{x.p}</span>}</summary>
+          <div style={{padding:"0 16px 12px"}}><p style={{fontFamily:fD,fontSize:13,color:C.tx2,lineHeight:1.7,margin:0}}>{x.detail}</p></div>
+        </details>
+      ))}
+      {(tab==="all"||tab==="stats")&&sec.stats.map((x,i)=>(
+        <div key={`st${si}${i}`} style={{...nC(C),padding:16,marginBottom:8}}>
+          <div style={{fontFamily:fM,fontSize:28,fontWeight:700,color:C.acc,marginBottom:4,letterSpacing:-1}}>{x.fig}</div>
+          <p style={{fontFamily:fD,fontSize:13,color:C.tx2,lineHeight:1.6,margin:"0 0 4px"}}>{x.note}</p>
+          <span style={{fontFamily:fM,fontSize:11,color:C.tx3}}>p. {x.p}</span>
+        </div>
+      ))}
+      {(tab==="all"||tab==="actions")&&sec.actions.map((x,i)=>{
+        const k=`${si}-${i}`;
+        return<div key={k} onClick={()=>sCk(p=>({...p,[k]:!p[k]}))} style={{...nC(C),padding:"10px 14px",marginBottom:7,cursor:"pointer",display:"flex",alignItems:"flex-start",gap:10}}>
+          <div style={{...(ck[k]?nI(C):nC(C)),width:20,height:20,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.ok,flexShrink:0,marginTop:2}}>{ck[k]&&"✓"}</div>
+          <span style={{fontFamily:fB,fontSize:13,color:ck[k]?C.tx3:C.tx,textDecoration:ck[k]?"line-through":"none",lineHeight:1.5}}>{x}</span>
+        </div>;
+      })}
+      {(tab==="all"||tab==="terms")&&sec.terms.map((x,i)=>(
+        <div key={`t${si}${i}`} style={{...nC(C),padding:"12px 16px",marginBottom:8}}>
+          <div style={{fontFamily:fD,fontSize:15,fontWeight:700,color:C.acc,marginBottom:4}}>{x.t}</div>
+          <p style={{fontFamily:fQ,fontSize:13,color:C.tx2,lineHeight:1.6,fontStyle:"italic",margin:0}}>{x.d}</p>
+        </div>
+      ))}
+    </div>;
+  })}
+</div>;}
+
+/* ── MIND MAP ── */
+function MM(){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const d=MMAP;const cx=300,cy=230,r1=120,r2=210;
+const angles=d.branches.map((_,i)=>i*90-90);
+return<div style={{padding:20}}>
+  <h2 style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx,marginBottom:14}}>Chapter Mind Map</h2>
+  <div style={{...nC(C),padding:12,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+    <svg viewBox="0 0 600 460" style={{width:"100%",minWidth:400}}>
+      {d.branches.map((b,i)=>{
+        const col=dk?b.dc:b.lc;const a=(angles[i]*Math.PI)/180;
+        const bx=cx+r1*Math.cos(a),by=cy+r1*Math.sin(a);
+        return<g key={`l${i}`}>
+          <line x1={cx} y1={cy} x2={bx} y2={by} stroke={col} strokeWidth="2" strokeOpacity=".4"/>
+          {b.ch.map((_,j)=>{const sp=28;const ca=angles[i]+(j-(b.ch.length-1)/2)*sp;const cr=(ca*Math.PI)/180;
+            return<line key={j} x1={bx} y1={by} x2={cx+r2*Math.cos(cr)} y2={cy+r2*Math.sin(cr)} stroke={col} strokeWidth="1.2" strokeOpacity=".2"/>;
+          })}
+        </g>;
+      })}
+      <circle cx={cx} cy={cy} r="48" fill={C.bgL} stroke={C.acc} strokeWidth="2"/>
+      <text x={cx} y={cy-6} textAnchor="middle" fill={C.tx} fontSize="10" fontFamily="Cormorant Garamond" fontWeight="700">Ch.1: Atomic</text>
+      <text x={cx} y={cy+8} textAnchor="middle" fill={C.acc} fontSize="10" fontFamily="Cormorant Garamond" fontWeight="700">Habits</text>
+      {d.branches.map((b,i)=>{
+        const col=dk?b.dc:b.lc;const a=(angles[i]*Math.PI)/180;
+        const bx=cx+r1*Math.cos(a),by=cy+r1*Math.sin(a);
+        return<g key={`n${i}`}>
+          <rect x={bx-52} y={by-16} width="104" height="32" rx="10" fill={C.bgL} stroke={col} strokeWidth="1.5"/>
+          {b.label.split("\n").map((ln,li)=><text key={li} x={bx} y={by+(li*11)-(b.label.includes("\n")?4:1)} textAnchor="middle" fill={col} fontSize="9" fontFamily="Nunito" fontWeight="700">{ln}</text>)}
+          {b.ch.map((child,j)=>{const sp=28;const ca=angles[i]+(j-(b.ch.length-1)/2)*sp;const cr=(ca*Math.PI)/180;
+            const cx2=cx+r2*Math.cos(cr),cy2=cy+r2*Math.sin(cr);
+            return<g key={j}><rect x={cx2-46} y={cy2-11} width="92" height="22" rx="8" fill={`${col}14`} stroke={`${col}44`} strokeWidth="1"/>
+              <text x={cx2} y={cy2+4} textAnchor="middle" fill={C.tx2} fontSize="8" fontFamily="Nunito">{child}</text></g>;
+          })}
+        </g>;
+      })}
+    </svg>
+  </div>
+  <p style={{fontFamily:fB,fontSize:12,color:C.tx3,textAlign:"center",marginTop:10}}>Each node maps to a page-range section in the chapter breakdown</p>
+</div>;}
+
+/* ── Q&A ── */
+function QA(){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const[inp,sInp]=useState("");const[msgs,sMsgs]=useState(QAI);const[typ,sTyp]=useState(false);
+const send=()=>{if(!inp.trim())return;sMsgs(m=>[...m,{role:"user",text:inp}]);sInp("");sTyp(true);
+  setTimeout(()=>{sMsgs(m=>[...m,{role:"ai",text:"Based on the book, the author addresses this through the lens of compound growth and systems thinking. Clear's central argument in Chapter 1 is that tiny improvements (1% per day) compound exponentially, and that focusing on systems rather than goals produces lasting results. The British Cycling case study demonstrates this — marginal gains in hundreds of small areas created world-class dominance within 5 years. (Chapter 1, pages 15–32)",sources:["Ch. 1, pp. 15–32"]}]);sTyp(false);},2000);
+};
+return<div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+  <div style={{padding:"12px 18px",flexShrink:0}}><h2 style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx}}>Ask About This Book</h2><p style={{fontFamily:fB,fontSize:12,color:C.tx3,marginTop:3}}>AI answers sourced from the book, with page references</p></div>
+  <div style={{flex:1,overflowY:"auto",padding:"0 18px 16px",display:"flex",flexDirection:"column",gap:12}}>
+    {msgs.map((m,i)=>(
+      <div key={i} style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"85%"}}>
+        <div style={{...(m.role==="user"?{...nB(C),background:C.acc,boxShadow:`4px 4px 10px ${C.shD}`}:nC(C)),padding:"11px 14px",borderRadius:16}}>
+          <p style={{fontFamily:m.role==="user"?fB:fD,fontSize:14,color:m.role==="user"?(dk?"#1E1E2A":"#FFF"):C.tx,lineHeight:1.65,margin:0}}>{m.text}</p>
+        </div>
+        {m.sources&&<div style={{marginTop:4,paddingLeft:4}}>{m.sources.map((s,j)=><Tag key={j} color={C.ok}>{s}</Tag>)}</div>}
+      </div>
+    ))}
+    {typ&&<div style={{...nI(C),padding:"10px 14px",alignSelf:"flex-start",borderRadius:16}}><span style={{fontFamily:fB,fontSize:13,color:C.tx3}}>Thinking…</span></div>}
+  </div>
+  <div style={{padding:"8px 18px 12px",display:"flex",gap:8,flexShrink:0}}>
+    <div style={{...nI(C),flex:1,padding:0}}><input value={inp} onChange={e=>sInp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Ask anything about the book…" style={{width:"100%",padding:"12px 14px",border:"none",background:"transparent",color:C.tx,fontFamily:fB,fontSize:13,outline:"none",boxSizing:"border-box"}}/></div>
+    <button onClick={send} style={{...nB(C),width:44,height:44,borderRadius:12,fontSize:17,color:C.acc,display:"flex",alignItems:"center",justifyContent:"center"}}>↑</button>
+  </div>
+</div>;}
+
+/* ── DAILY DIGEST ── */
+function Dig(){const{dk}=useT();const C=dk?TH.dark:TH.light;
+return<div style={{padding:20}}>
+  <div style={{textAlign:"center",marginBottom:22}}>
+    <div style={{fontSize:48,marginBottom:8}}>🔥</div>
+    <h2 style={{fontFamily:fD,fontSize:26,fontWeight:700,color:C.tx,marginBottom:4}}>Day 4 Streak</h2>
+    <p style={{fontFamily:fB,fontSize:13,color:C.tx3}}>Consistency compounds — keep going</p>
+  </div>
+  <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:24}}>
+    {["M","T","W","T","F","S","S"].map((d,i)=>(
+      <div key={i} style={{...(i<4?nI(C):nC(C)),width:36,height:36,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:fM,fontSize:12,fontWeight:700,color:i<4?C.ok:C.tx3}}>{i<4?"✓":d}</div>
+    ))}
+  </div>
+  <div style={{...nC(C),padding:18,marginBottom:14}}>
+    <Tag color={C.warn}>Today's Chapter</Tag>
+    <h3 style={{fontFamily:fD,fontSize:18,fontWeight:700,color:C.tx,margin:"10px 0 6px"}}>Ch. 4: The Man Who Didn't Look Right</h3>
+    <p style={{fontFamily:fQ,fontSize:13,color:C.tx2,lineHeight:1.65,fontStyle:"italic",marginBottom:14}}>This chapter explores how habits become automatic through pattern recognition. Clear tells the story of a museum curator who could spot art forgeries at a glance…</p>
+    <button style={{...nB(C),width:"100%",padding:"12px 0",fontFamily:fD,fontSize:15,fontWeight:700,color:C.acc}}>Read Chapter Breakdown →</button>
+  </div>
+  <div style={{...nI(C),padding:16,borderRadius:16}}>
+    <h4 style={{fontFamily:fB,fontSize:14,fontWeight:700,color:C.tx,margin:"0 0 8px"}}>📊 Quick Quiz — Chapter 3 Recap</h4>
+    <p style={{fontFamily:fB,fontSize:13,color:C.tx3,marginBottom:10}}>What are the 4 steps of the habit loop?</p>
+    {["Cue → Craving → Response → Reward","Plan → Act → Review → Repeat","Trigger → Behavior → Outcome → Loop"].map((o,i)=>(
+      <div key={i} style={{...nC(C),padding:"10px 12px",marginBottom:7,cursor:"pointer"}}>
+        <span style={{fontFamily:fB,fontSize:13,color:i===0?C.ok:C.tx,fontWeight:i===0?700:400}}>{i===0?"✓ ":""}{o}</span>
+      </div>
+    ))}
+  </div>
+</div>;}
+
+/* ── EXPORT ── */
+function Exp(){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const[sel,sSel]=useState(new Set([0,1,2,3]));const[exp,sExp]=useState(false);const[done,sDone]=useState(false);
+const tog=i=>{const n=new Set(sel);n.has(i)?n.delete(i):n.add(i);sSel(n);};
+return<div style={{padding:20}}>
+  <h2 style={{fontFamily:fD,fontSize:22,fontWeight:700,color:C.tx,marginBottom:4}}>Export to Word</h2>
+  <p style={{fontFamily:fB,fontSize:13,color:C.tx3,marginBottom:16}}>Select chapters for your .docx download</p>
+  <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+    {CHS.slice(0,4).map((ch,i)=>(
+      <div key={i} onClick={()=>tog(i)} style={{...nC(C),padding:"12px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+        <div style={{...(sel.has(i)?nI(C):nC(C)),width:22,height:22,borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.acc,flexShrink:0}}>{sel.has(i)&&"✓"}</div>
+        <span style={{fontFamily:fB,fontSize:13,color:C.tx}}>{ch.title}</span>
+      </div>
+    ))}
+  </div>
+  <div style={{...nI(C),padding:14,marginBottom:16}}>
+    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+      {["Key Ideas","Quotes","Stories","Stats","Actions","Terms","Mind Map (PNG)"].map(t=><Tag key={t}>{t}</Tag>)}
+    </div>
+  </div>
+  {done?<div style={{textAlign:"center",padding:20}}><div style={{fontSize:44,marginBottom:8}}>✅</div><h3 style={{fontFamily:fD,fontSize:18,fontWeight:700,color:C.ok}}>Export Complete</h3><p style={{fontFamily:fB,fontSize:13,color:C.tx3}}>Atomic_Habits_Breakdown.docx saved</p></div>:
+  <button onClick={()=>{sExp(true);setTimeout(()=>{sExp(false);sDone(true);},2000);}} disabled={exp||sel.size===0}
+    style={{...nB(C),width:"100%",padding:"14px 0",fontFamily:fD,fontSize:16,fontWeight:700,color:exp?C.tx3:C.acc}}>
+    {exp?"Generating document…":`Export ${sel.size} Chapters as .docx`}
+  </button>}
+</div>;}
+
+/* ── APP SHELL ── */
+function App(){
+  const[scr,setScr]=useState(S.LIB);
+  const[book,setBook]=useState(null);
+  const[dk,setDk]=useState(false);
+  const ref=useRef(null);
+  const nav=useCallback(s=>{setScr(s);ref.current?.scrollTo(0,0);},[]);
+  const C=dk?TH.dark:TH.light;
+  return<Ctx.Provider value={{dk,tog:()=>setDk(d=>!d)}}>
+    <div style={{maxWidth:440,margin:"0 auto",background:C.bg,height:"100vh",display:"flex",flexDirection:"column",transition:"background .3s"}}>
+      <Nav scr={scr} onNav={nav} sub={book?.title&&scr!==S.LIB?book.title:null}/>
+      <div ref={ref} style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+        {scr===S.LIB&&<Lib onNav={nav} onSel={setBook}/>}
+        {scr===S.UP&&<Upload onNav={nav}/>}
+        {scr===S.PROC&&<Proc onNav={nav} onSel={setBook}/>}
+        {scr===S.OV&&book&&<Ov book={book} onNav={nav}/>}
+        {scr===S.CH&&<Ch/>}
+        {scr===S.MM&&<MM/>}
+        {scr===S.QA&&<QA/>}
+        {scr===S.DIG&&<Dig/>}
+        {scr===S.EXP&&<Exp/>}
+      </div>
+      <Bar scr={scr} onNav={nav}/>
+    </div>
+  </Ctx.Provider>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
