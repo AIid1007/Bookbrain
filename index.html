@@ -4,551 +4,581 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="mobile-web-app-capable" content="yes"/>
-<meta name="theme-color" content="#E8E0D4"/>
-<title>BookBrain — AI Book Understanding</title>
+<meta name="theme-color" content="#E8E0D4" id="tc"/>
+<title>BookBrain</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Nunito:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%;overflow:hidden;-webkit-tap-highlight-color:transparent}
-  body{font-family:'Nunito',sans-serif;background:#E8E0D4}
-  #root{height:100%;display:flex;flex-direction:column}
-  details summary{list-style:none}
-  details summary::-webkit-details-marker{display:none}
-  input::placeholder{color:inherit;opacity:.5}
-  ::-webkit-scrollbar{width:4px}
-  ::-webkit-scrollbar-thumb{background:rgba(139,105,20,.2);border-radius:4px}
+*{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;overflow:hidden;-webkit-tap-highlight-color:transparent}
+body{font-family:'Nunito',sans-serif;background:#E8E0D4;transition:background .3s}
+#root{height:100%}details summary{list-style:none}details summary::-webkit-details-marker{display:none}
+input::placeholder{opacity:.5}::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:rgba(139,105,20,.2);border-radius:4px}
+.flbl{display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;width:100%;height:100%}
+.flbl input[type=file]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
 </style>
 </head>
 <body>
 <div id="root"></div>
+<script type="module">
+try{const w=await import("https://esm.run/@mlc-ai/web-llm");window.__webllm=w;window.dispatchEvent(new Event('webllm-ready'));}catch(e){console.warn("WebLLM:",e);}
+</script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+ 
+// ══════ PDF PARSER (with font size info) ══════
+async function parsePDF(file,cb){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const pages=[];
+  for(let i=1;i<=pdf.numPages;i++){
+    if(cb)cb(i,pdf.numPages);
+    const pg=await pdf.getPage(i);
+    const tc=await pg.getTextContent();
+    let txt='';let maxFontSize=0;let firstLineFontSize=0;let firstLineText='';
+    tc.items.forEach((it,idx)=>{
+      const fs=Math.abs(it.transform?.[3]||12);
+      if(fs>maxFontSize)maxFontSize=fs;
+      if(idx<3&&!firstLineText){firstLineFontSize=fs;firstLineText=it.str.trim();}
+      txt+=it.str+' ';
+    });
+    txt=txt.replace(/\s+/g,' ').trim();
+    if(txt.length>5)pages.push({pageNum:i,text:txt,maxFS:maxFontSize,firstFS:firstLineFontSize,firstLine:firstLineText});
+  }
+  return pages;
+}
+ 
+// ══════ EPUB PARSER ══════
+async function parseEPUB(file,cb){
+  const zip=await JSZip.loadAsync(file);
+  const cx=await zip.file('META-INF/container.xml')?.async('text');
+  if(!cx)throw new Error('Invalid EPUB');
+  const opfPath=(cx.match(/full-path="([^"]+)"/)||[])[1];
+  if(!opfPath)throw new Error('Invalid EPUB: no OPF');
+  const opf=await zip.file(opfPath)?.async('text');if(!opf)throw new Error('Missing OPF');
+  const dp=new DOMParser();const od=dp.parseFromString(opf,'application/xml');
+  const mf={};
+  (od.querySelectorAll('item').length?od.querySelectorAll('item'):od.getElementsByTagName('item'))
+    .forEach?.(it=>{mf[it.getAttribute('id')]=it.getAttribute('href');});
+  if(!Object.keys(mf).length)od.getElementsByTagName('item').forEach?.(it=>{mf[it.getAttribute('id')]=it.getAttribute('href');});
+  // fallback for NodeList without forEach
+  const items=od.getElementsByTagName('item');
+  if(!Object.keys(mf).length)for(let i=0;i<items.length;i++){mf[items[i].getAttribute('id')]=items[i].getAttribute('href');}
+  const spine=[];
+  const refs=od.getElementsByTagName('itemref');
+  for(let i=0;i<refs.length;i++){const id=refs[i].getAttribute('idref');if(mf[id])spine.push(mf[id]);}
+  const base=opfPath.substring(0,opfPath.lastIndexOf('/')+1);
+  const pages=[];let pn=1;
+  for(let si=0;si<spine.length;si++){
+    if(cb)cb(si+1,spine.length);
+    const fp=(base+spine[si]).replace(/^\//,'');
+    let entry=null;
+    zip.forEach((p,e)=>{if(p.toLowerCase()===fp.toLowerCase())entry=e;});
+    if(!entry)continue;
+    const html=await entry.async('text');
+    const doc=dp.parseFromString(html,'text/html');
+    const txt=(doc.body?.textContent||'').replace(/\s+/g,' ').trim();
+    const h=doc.querySelector('h1,h2,h3');
+    if(txt.length>40)pages.push({pageNum:pn++,text:txt,epubTitle:h?h.textContent.trim():'',isEpub:true});
+  }
+  return pages;
+}
+ 
+// ══════ ENHANCED CHAPTER DETECTION ══════
+function detectChapters(pages,isEpub){
+  const chs=[];
+  if(isEpub){
+    for(let i=0;i<pages.length;i++){
+      const p=pages[i];
+      if(p.epubTitle&&p.epubTitle.length>2&&p.text.length>100){
+        chs.push({n:chs.length+1,title:p.epubTitle.slice(0,100),ps:p.pageNum,pe:p.pageNum,pidx:[i]});
+      }else if(chs.length>0){
+        chs[chs.length-1].pe=p.pageNum;chs[chs.length-1].pidx.push(i);
+      }else{chs.push({n:1,title:p.epubTitle||'Opening',ps:p.pageNum,pe:p.pageNum,pidx:[i]});}
+    }
+    return chs;
+  }
+  // PDF: multi-signal detection
+  const pats=[
+    /^(?:chapter|ch\.?)\s*(\d+|[ivxlcdm]+)\b[:\s.—–\-]*(.*)/i,
+    /^(?:part|section|book)\s*(\d+|[ivxlcdm]+)\b[:\s.—–\-]*(.*)/i,
+    /^(\d{1,3})[.:]\s+([A-Z][A-Za-z\s,:'—–-]{4,70})$/m,
+    /^(introduction|preface|foreword|prologue|epilogue|conclusion|afterword|acknowledgments)\b[:\s.—–\-]*(.*)/i,
+  ];
+  // Compute median font size to detect headings
+  const fontSizes=pages.map(p=>p.firstFS||12);
+  const sorted=[...fontSizes].sort((a,b)=>a-b);
+  const medianFS=sorted[Math.floor(sorted.length/2)]||12;
+  const headingThreshold=medianFS*1.15;
+ 
+  for(let i=0;i<pages.length;i++){
+    const p=pages[i];
+    const lines=p.text.split(/\s{3,}|\t/).map(l=>l.trim()).filter(l=>l.length>2);
+    let found=false;
+    for(const line of lines.slice(0,5)){// check first 5 segments
+      for(const pat of pats){
+        const m=line.match(pat);
+        if(m){
+          const title=(m[2]||m[1]||line).trim().replace(/^[:\s.—–-]+/,'');
+          if(title.length>1){chs.push({n:chs.length+1,title:title.slice(0,100),ps:p.pageNum,pe:0,pidx:[]});found=true;break;}
+        }
+      }
+      if(found)break;
+    }
+    // Font-size heading detection: if first line is significantly larger AND short
+    if(!found&&p.firstFS>headingThreshold&&p.firstLine&&p.firstLine.length>3&&p.firstLine.length<80){
+      // Check it's not just a number or date
+      if(!/^\d+$/.test(p.firstLine)&&/[a-zA-Z]{3,}/.test(p.firstLine)){
+        chs.push({n:chs.length+1,title:p.firstLine.slice(0,100),ps:p.pageNum,pe:0,pidx:[]});
+      }
+    }
+    // ALL CAPS line detection (common chapter style)
+    if(!found){
+      for(const line of lines.slice(0,3)){
+        if(line.length>4&&line.length<70&&line===line.toUpperCase()&&/[A-Z]{4,}/.test(line)&&!/^\d+$/.test(line)){
+          chs.push({n:chs.length+1,title:line.charAt(0)+line.slice(1).toLowerCase(),ps:p.pageNum,pe:0,pidx:[]});break;
+        }
+      }
+    }
+  }
+  // Deduplicate chapters on same page
+  const deduped=[];
+  for(const ch of chs){if(!deduped.length||ch.ps!==deduped[deduped.length-1].ps)deduped.push(ch);else if(ch.title.length>deduped[deduped.length-1].title.length)deduped[deduped.length-1]=ch;}
+  // Set page ranges
+  for(let i=0;i<deduped.length;i++){
+    const nextPS=i<deduped.length-1?deduped[i+1].ps:pages[pages.length-1].pageNum+1;
+    deduped[i].pe=nextPS-1;deduped[i].pidx=[];
+    for(let pi=0;pi<pages.length;pi++){if(pages[pi].pageNum>=deduped[i].ps&&pages[pi].pageNum<=deduped[i].pe)deduped[i].pidx.push(pi);}
+  }
+  // Fallback: adaptive split
+  if(deduped.length<2){
+    deduped.length=0;
+    const step=Math.max(4,Math.min(15,Math.ceil(pages.length/10)));
+    for(let i=0;i<pages.length;i+=step){
+      const end=Math.min(i+step-1,pages.length-1);
+      const idx=[];for(let j=i;j<=end;j++)idx.push(j);
+      const fl=pages[i].firstLine||pages[i].text.slice(0,50);
+      deduped.push({n:deduped.length+1,title:fl.slice(0,60)+(fl.length>60?'…':''),ps:pages[i].pageNum,pe:pages[end].pageNum,pidx:idx});
+    }
+  }
+  // Renumber
+  deduped.forEach((c,i)=>c.n=i+1);
+  return deduped;
+}
+ 
+// ══════ ENHANCED HEURISTIC EXTRACTION ══════
+function heuristicExtract(pidx,allPages){
+  const text=pidx.map(i=>allPages[i]?.text||'').join('\n\n');
+  if(text.length<30)return{summary:'',ideas:[],quotes:[],stories:[],stats:[],actions:[],terms:[],mode:'heuristic'};
+  const sents=(text.match(/[^.!?]+[.!?]+/g)||[text]).map(s=>s.trim()).filter(s=>s.length>15);
+  const paras=text.split(/\n\s*\n/).filter(p=>p.trim().length>40);
+  const pg=allPages[pidx[0]]?.pageNum||0;
+ 
+  // ── QUOTES (multiple styles) ──
+  const quotes=[];
+  const qPats=[/[""\u201c]([^""\u201d]{12,300})[""\u201d]/g, /[''\u2018]([^''\u2019]{20,300})[''\u2019]/g];
+  for(const re of qPats){let m;while((m=re.exec(text))!==null){
+    const qt=m[1].trim();
+    if(qt.length>12&&!/^(http|www|\d+$)/i.test(qt)&&!quotes.find(q=>q.text===qt))
+      quotes.push({text:qt,p:pg});
+  }}
+ 
+  // ── STATISTICS (comprehensive patterns) ──
+  const stats=[];
+  const statSignals=[
+    /(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(%|percent)/i,
+    /\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(million|billion|trillion|thousand)?/i,
+    /(\d+(?:\.\d+)?)\s*(?:x|×|times)\b/i,
+    /(\d+)\s+(?:out of|in every)\s+(\d+)/i,
+    /(\d{2,})\s+(?:people|companies|studies|countries|participants|employees|hours|years|months|percent)/i,
+    /(?:stud(?:y|ies)|research|survey|data|report)\s+(?:found|show(?:s|ed)?|reveal(?:s|ed)?|indicat(?:e|ed)|suggest(?:s|ed)?)/i,
+  ];
+  for(const s of sents){
+    for(const re of statSignals){
+      if(re.test(s)){
+        const numMatch=s.match(/[\$]?[\d,]+\.?\d*\s*[%×x]?|\d+\.?\d*\s*(?:percent|million|billion|times|years|months|hours|people|companies)/i);
+        if(numMatch&&!stats.find(st=>st.note===s))
+          stats.push({fig:numMatch[0].trim(),note:s.slice(0,220),p:pg});
+        break;
+      }
+    }
+  }
+ 
+  // ── KEY IDEAS (signal-word weighted) ──
+  const sigWords=['important','key','crucial','fundamental','essential','critical','significant',
+    'the point is','in other words','this means','the lesson','the takeaway','the implication',
+    'what this tells us','the core','the main','the central','ultimately','in essence','at its core',
+    'the bottom line','the truth is','the reality is','the principle','the idea','the concept',
+    'the argument','the finding','the research shows','the evidence suggests'];
+  const ideas=[];
+  // First: signal-word sentences
+  for(const s of sents){
+    const sl=s.toLowerCase();
+    const score=sigWords.reduce((sc,w)=>sc+(sl.includes(w)?1:0),0);
+    if(score>0&&s.length>30&&s.length<400){
+      const para=paras.find(p=>p.includes(s.slice(0,40)));
+      const detail=para?para.replace(s,'').trim().slice(0,280):'Elaborated further in the surrounding text.';
+      ideas.push({text:s,detail,score});
+    }
+  }
+  // Then: topic sentences (first sentence of substantial paragraphs)
+  for(const p of paras){
+    if(p.length<60)continue;
+    const fs=(p.match(/^[^.!?]+[.!?]/)||[p.slice(0,200)])[0].trim();
+    if(fs.length>25&&fs.length<400&&!ideas.find(i=>i.text===fs)){
+      ideas.push({text:fs,detail:p.slice(fs.length).trim().slice(0,280)||'Expanded upon in the text.',score:0});
+    }
+  }
+  ideas.sort((a,b)=>(b.score||0)-(a.score||0));
+ 
+  // ── STORIES & EXAMPLES (narrative detection) ──
+  const storyPats=[
+    /\b(once upon|one day|one morning|one evening|years ago|decades ago|back in \d{4}|in \d{4}|when \w+ was \d+)\b/i,
+    /\b(story of|tale of|anecdote|case study|case of|example of|experiment by|study by|research by)\b/i,
+    /\b([A-Z][a-z]{2,15}(?:\s+[A-Z][a-z]{2,15})?)\s+(?:was|had|told|said|found|discovered|realized|decided|began|started|noticed|recalled|remembered|described|explained|argued|believed|created|built|invented|developed)\b/,
+    /\b(said|told|asked|replied|explained|recalled|remembered|recounted|described|narrated)\b/i,
+  ];
+  const stories=[];
+  for(const p of paras){
+    if(p.length<80)continue;
+    let isStory=0;
+    for(const re of storyPats){if(re.test(p))isStory++;}
+    if(isStory>=1){
+      const nameMatch=p.match(/\b([A-Z][a-z]{2,15}(?:\s+[A-Z][a-z]{2,15}){0,2})\b/);
+      const contextMatch=p.match(/(?:story of|tale of|case of|example of|experiment)\s+([^.]{5,50})/i);
+      const title=contextMatch?contextMatch[1].trim():(nameMatch?nameMatch[1]+"'s Story":p.split(/[.!?]/)[0].slice(0,50));
+      if(!stories.find(s=>s.title===title))
+        stories.push({title:title.trim(),detail:p.trim().slice(0,380),p:pg});
+    }
+  }
+ 
+  // ── ACTION ITEMS (comprehensive) ──
+  const actions=[];
+  const impRe=/(?:^|\.\s+)((?:Try|Start|Begin|Consider|Make|Take|Write|Identify|Ask yourself|Create|Build|Practice|Stop|Avoid|Remember|Focus|Set|Establish|Review|List|Schedule|Think about|Reflect on|Notice|Observe|Commit to|Dedicate|Eliminate|Reduce|Increase|Track|Measure|Evaluate|Test|Experiment with|Apply|Implement|Design|Develop|Choose|Pick|Select|Prioritize|Block|Protect|Guard|Batch|Limit|Remove|Replace|Substitute|Adopt)[^.!?]{8,150}[.!?])/gi;
+  let m;while((m=impRe.exec(text))!==null){const a=m[1].trim();if(!actions.includes(a))actions.push(a);}
+  const shouldRe=/[Yy]ou (?:should|could|must|need to|might want to|ought to|have to)\s+([^.!?]{8,150}[.!?])/g;
+  while((m=shouldRe.exec(text))!==null){const a='Consider: '+m[1].trim();if(!actions.includes(a))actions.push(a);}
+  const lessonRe=/(?:the (?:lesson|takeaway|key|trick|secret|solution|answer|point)|what (?:works|helps|matters))\s+(?:is|here is|:)\s+([^.!?]{8,150}[.!?])/gi;
+  while((m=lessonRe.exec(text))!==null){const a='Key insight: '+m[1].trim();if(!actions.includes(a))actions.push(a);}
+ 
+  // ── TERMS (comprehensive definition detection) ──
+  const terms=[];
+  const defPats=[
+    /[""]?(\w[\w\s]{2,40})[""]?\s+(?:is defined as|refers to|is the concept of|is a term (?:for|meaning)|denotes|signifies|describes the)\s+([^.]{10,200})\./gi,
+    /(?:known as|called|termed|dubbed|referred to as|what (?:we|they|he|she|I) call(?:s|ed)?)\s+[""]?(\w[\w\s]{2,40})[""]?/gi,
+    /(\w[\w\s]{2,35}):\s+([A-Z][^.]{15,200}\.)/gm,
+    /[Tt]he term\s+[""]?(\w[\w\s]{2,35})[""]?\s+(?:means|refers|describes|denotes)\s+([^.]{10,200})\./gi,
+  ];
+  for(const re of defPats){let m2;while((m2=re.exec(text))!==null){
+    const t=(m2[1]||'').trim();const d=(m2[2]||'').trim();
+    if(t.length>2&&d.length>8&&!terms.find(x=>x.t.toLowerCase()===t.toLowerCase()))
+      terms.push({t,d:d.slice(0,200)});
+  }}
+  // Repeated capitalized phrases (frequency-based term detection)
+  const capRe2=/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g;
+  const cc={};while((m=capRe2.exec(text))!==null){if(m[1].length>4)cc[m[1]]=(cc[m[1]]||0)+1;}
+  for(const[ph,ct]of Object.entries(cc)){
+    if(ct>=3&&!terms.find(x=>x.t===ph)){
+      const ctx=sents.find(s=>s.includes(ph));
+      terms.push({t:ph,d:ctx?ctx.slice(0,200):'A recurring concept in this chapter.'});
+    }
+  }
+ 
+  // ── SUMMARY ──
+  const sumParts=[];
+  if(paras[0])sumParts.push(paras[0].slice(0,250));
+  if(paras.length>3)sumParts.push(paras[Math.floor(paras.length/2)].slice(0,150));
+  if(paras.length>1)sumParts.push(paras[paras.length-1].slice(0,150));
+  const summary=sumParts.join(' ').slice(0,450)||sents.slice(0,3).join(' ');
+ 
+  return{summary,ideas:ideas.slice(0,8),quotes:quotes.slice(0,6),stories:stories.slice(0,4),stats:stats.slice(0,5),actions:actions.slice(0,6),terms:terms.slice(0,6),mode:'heuristic'};
+}
+ 
+// ══════ GEMMA AI EXTRACTION ══════
+async function aiExtractChapter(engine,text){
+  const t=text.slice(0,6000);
+  const prompt='Extract book insights. Return ONLY valid JSON, no other text:\n{"summary":"2-3 sentences","ideas":[{"text":"insight","detail":"explanation"}],"quotes":[{"text":"exact quote","p":0}],"stories":[{"title":"name","detail":"description","p":0}],"stats":[{"fig":"number","note":"meaning","p":0}],"actions":["takeaway"],"terms":[{"t":"term","d":"definition"}]}\nExtract up to 8 items per category. Be thorough.\n\nTEXT:\n'+t;
+  try{
+    const r=await engine.chat.completions.create({messages:[{role:"user",content:prompt}],temperature:0.1,max_tokens:3000});
+    let j=r.choices[0].message.content.replace(/```json\s*/g,'').replace(/```/g,'').trim();
+    const match=j.match(/\{[\s\S]*\}/);
+    if(match){const parsed=JSON.parse(match[0]);parsed.mode='gemma';return parsed;}
+    throw new Error('No JSON');
+  }catch(e){console.warn('AI extract failed:',e);return null;}
+}
+ 
+// ══════ AI-POWERED Q&A ══════
+async function aiAnswer(engine,question,pages){
+  const results=searchText(question,pages);
+  if(!results.length)return{text:'No relevant passages found for that question.',src:null};
+  const context=results.map(r=>'[p.'+r.pageNum+'] '+r.text.slice(0,600)).join('\n\n');
+  try{
+    const r=await engine.chat.completions.create({messages:[{role:"user",content:'Based on these book passages, answer the question concisely with page references.\n\nPassages:\n'+context+'\n\nQuestion: '+question}],temperature:0.2,max_tokens:1000});
+    return{text:r.choices[0].message.content,src:'pp. '+results.map(r=>r.pageNum).join(', ')};
+  }catch(e){return{text:context,src:'pp. '+results.map(r=>r.pageNum).join(', ')};}
+}
+ 
+function searchText(q,pages){
+  const kw=q.toLowerCase().split(/\s+/).filter(w=>w.length>3);
+  if(!kw.length)return[];
+  return pages.map(p=>{const t=p.text.toLowerCase();return{...p,score:kw.reduce((s,k)=>s+(t.includes(k)?1:0),0)};}).filter(r=>r.score>0).sort((a,b)=>b.score-a.score).slice(0,4);
+}
+ 
+function genMindMap(ch){
+  const ins=ch?.insights;if(!ins)return null;
+  const cols=[{lc:"#8B6914",dc:"#D4A843"},{lc:"#5A7A4A",dc:"#7AAE5E"},{lc:"#7B5B2A",dc:"#C49A4A"},{lc:"#A0422A",dc:"#D06040"},{lc:"#3A6A8A",dc:"#5AAADA"},{lc:"#7A4A8A",dc:"#AA7ABA"}];
+  const br=ins.ideas.slice(0,4).map((idea,i)=>{
+    const ch2=[];if(ins.terms[i])ch2.push(ins.terms[i].t);if(ins.quotes[i])ch2.push('"'+ins.quotes[i].text.slice(0,22)+'…"');if(ins.actions[i])ch2.push(ins.actions[i].slice(0,25));if(!ch2.length)ch2.push('Detail');
+    return{label:idea.text.length>32?idea.text.slice(0,29)+'…':idea.text,ch:ch2.slice(0,3),...cols[i%6]};
+  });
+  if(br.length<2&&ins.terms.length)br.push({label:'Key Terms',ch:ins.terms.slice(0,3).map(t=>t.t),...cols[br.length%6]});
+  return{center:ch.title?.length>22?ch.title.slice(0,19)+'…':ch.title,branches:br};
+}
+</script>
+ 
 <script type="text/babel">
-const {useState,useCallback,useRef,createContext,useContext}=React;
- 
-/* ── THEMES ── */
+const{useState,useCallback,useRef,useEffect,createContext,useContext}=React;
 const TH={
-  light:{bg:"#E8E0D4",bgL:"#F0E8DC",bgD:"#D8D0C4",shL:"#F5EDE1",shD:"#C4BCA8",acc:"#8B6914",accL:"#A6841E",accS:"rgba(139,105,20,.12)",tx:"#2C2416",tx2:"#6B5D4A",tx3:"#9A8B74",ok:"#5A7A4A",okS:"rgba(90,122,74,.15)",warn:"#B8860B",qt:"#7B5B2A",dng:"#A0422A"},
-  dark:{bg:"#1E1E2A",bgL:"#272738",bgD:"#16161F",shL:"#2A2A3C",shD:"#111118",acc:"#D4A843",accL:"#E0BC5A",accS:"rgba(212,168,67,.15)",tx:"#E8E2D8",tx2:"#B0A898",tx3:"#787068",ok:"#7AAE5E",okS:"rgba(122,174,94,.18)",warn:"#E0A830",qt:"#C49A4A",dng:"#D06040"}
+  light:{bg:"#E8E0D4",bgL:"#F0E8DC",shL:"#F5EDE1",shD:"#C4BCA8",acc:"#8B6914",accL:"#A6841E",accS:"rgba(139,105,20,.12)",tx:"#2C2416",tx2:"#6B5D4A",tx3:"#9A8B74",ok:"#5A7A4A",okS:"rgba(90,122,74,.15)",warn:"#B8860B",qt:"#7B5B2A",dng:"#A0422A"},
+  dark:{bg:"#1E1E2A",bgL:"#272738",shL:"#2A2A3C",shD:"#111118",acc:"#D4A843",accL:"#E0BC5A",accS:"rgba(212,168,67,.15)",tx:"#E8E2D8",tx2:"#B0A898",tx3:"#787068",ok:"#7AAE5E",okS:"rgba(122,174,94,.18)",warn:"#E0A830",qt:"#C49A4A",dng:"#D06040"}
 };
-const Ctx=createContext();
-const useT=()=>useContext(Ctx);
+const Ctx=createContext();const useT=()=>useContext(Ctx);
 const fD="'Cormorant Garamond',serif",fB="'Nunito',sans-serif",fM="'JetBrains Mono',monospace",fQ="'Playfair Display',serif";
- 
-/* ── NEU HELPERS ── */
 const sh=(C,ins=false,i=1)=>{const d=Math.round(6*i),b=Math.round(12*i);return ins?`inset ${d}px ${d}px ${b}px ${C.shD},inset -${d}px -${d}px ${b}px ${C.shL}`:`${d}px ${d}px ${b}px ${C.shD},-${d}px -${d}px ${b}px ${C.shL}`;};
 const shP=C=>`inset 3px 3px 6px ${C.shD},inset -3px -3px 6px ${C.shL}`;
-const nC=C=>({background:C.bg,borderRadius:20,boxShadow:sh(C),border:"none"});
-const nI=C=>({background:C.bg,borderRadius:16,boxShadow:sh(C,true),border:"none"});
-const nB=C=>({background:C.bg,borderRadius:14,boxShadow:sh(C,false,.7),border:"none",cursor:"pointer",transition:"all .15s",fontFamily:fB});
+const nC=C=>({background:C.bg,borderRadius:18,boxShadow:sh(C),border:"none"});
+const nI=C=>({background:C.bg,borderRadius:14,boxShadow:sh(C,true),border:"none"});
+const nB=C=>({background:C.bg,borderRadius:12,boxShadow:sh(C,false,.7),border:"none",cursor:"pointer",transition:"all .15s",fontFamily:fB});
+const SC={LIB:0,UP:1,PROC:2,OV:3,CH:4,MM:5,QA:6,EXP:7};
  
-/* ── SCREENS ── */
-const S={LIB:0,UP:1,PROC:2,OV:3,CH:4,MM:5,QA:6,DIG:7,EXP:8};
+function ThemeToggle(){const{dk,tog}=useT();const C=dk?TH.dark:TH.light;return<button onClick={tog} style={{...nB(C),width:42,height:42,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,color:C.acc}}>{dk?"☀️":"🌙"}</button>;}
+function TopNav({scr,onNav,sub}){const{dk}=useT();const C=dk?TH.dark:TH.light;return<div style={{padding:"11px 14px",display:"flex",alignItems:"center",gap:8,background:C.bg,boxShadow:`0 2px 6px ${C.shD}`,zIndex:100,flexShrink:0}}>{scr!==SC.LIB&&<button onClick={()=>onNav(sub?SC.OV:SC.LIB)} style={{...nB(C),width:42,height:42,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,color:C.acc}}>←</button>}<div style={{flex:1}}><div style={{fontFamily:fD,fontSize:21,fontWeight:700,color:C.acc}}>BookBrain</div></div>{sub&&<span style={{fontFamily:fB,fontSize:10,color:C.tx3,maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</span>}<ThemeToggle/></div>;}
+function BotBar({scr,onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;return<div style={{display:"flex",padding:"6px 12px 10px",background:C.bg,boxShadow:`0 -2px 6px ${C.shD}`,flexShrink:0}}>{[{s:SC.LIB,ic:"📚",lb:"Library"},{s:SC.QA,ic:"💬",lb:"Q&A"},{s:SC.EXP,ic:"📤",lb:"Export"}].map(t=><button key={t.s} onClick={()=>onNav(t.s)} style={{flex:1,padding:"8px 0",background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><span style={{fontSize:15}}>{t.ic}</span><span style={{fontFamily:fB,fontSize:10,color:scr===t.s?C.acc:C.tx3,fontWeight:scr===t.s?700:400}}>{t.lb}</span></button>)}</div>;}
+function Tag({children,color}){const{dk}=useT();const C=dk?TH.dark:TH.light;const c=color||C.acc;return<span style={{display:"inline-block",padding:"3px 9px",borderRadius:14,fontFamily:fB,fontSize:10,fontWeight:600,color:c,background:`${c}15`,marginRight:4,marginBottom:3}}>{children}</span>;}
+function Prog({value,color,label}){const{dk}=useT();const C=dk?TH.dark:TH.light;const c=color||C.acc;return<div><div style={{...nI(C),height:7,borderRadius:7,overflow:"hidden",padding:0}}><div style={{width:`${Math.min(100,value)}%`,height:"100%",borderRadius:7,background:`linear-gradient(90deg,${c},${C.accL})`,transition:"width .4s"}}/></div>{label&&<span style={{fontFamily:fM,fontSize:10,color:C.tx3,display:"block",marginTop:2}}>{label}</span>}</div>;}
  
-/* ── MOCK DATA ── */
-const BOOKS=[
-  {id:1,title:"Atomic Habits",author:"James Clear",chapters:20,progress:65,emoji:"📗"},
-  {id:2,title:"Deep Work",author:"Cal Newport",chapters:14,progress:30,emoji:"📘"},
-  {id:3,title:"Thinking, Fast and Slow",author:"Daniel Kahneman",chapters:38,progress:0,emoji:"📙",proc:true},
-];
+/* ══ GEMMA PANEL (reusable) ══ */
+function GemmaBtn({engine,loading,progress,error,onLoad,onEnhance,label}){
+  const{dk}=useT();const C=dk?TH.dark:TH.light;
+  if(error)return<div style={{...nI(C),padding:10,borderRadius:12,marginTop:8}}><p style={{fontFamily:fB,fontSize:11,color:C.dng}}>{error}</p></div>;
+  if(loading)return<div style={{...nI(C),padding:10,borderRadius:12,marginTop:8}}><p style={{fontFamily:fM,fontSize:10,color:C.acc,marginBottom:4}}>Downloading Gemma 2B…</p><p style={{fontFamily:fB,fontSize:10,color:C.tx3}}>{progress}</p><Prog value={-1} color={C.warn}/></div>;
+  if(!engine)return<button onClick={onLoad} style={{...nB(C),width:"100%",padding:"11px 0",marginTop:8,fontFamily:fB,fontSize:12,fontWeight:700,color:C.acc}}>🧠 {label||'Enable Gemma AI'}</button>;
+  return<button onClick={onEnhance} style={{...nB(C),width:"100%",padding:"11px 0",marginTop:8,fontFamily:fB,fontSize:12,fontWeight:700,color:C.ok}}>✨ {label||'Re-extract with Gemma AI'}</button>;
+}
  
-const CHS=[
-  {n:1,title:"The Surprising Power of Atomic Habits",done:true,pages:"pp. 15–32"},
-  {n:2,title:"How Your Habits Shape Your Identity",done:true,pages:"pp. 33–49"},
-  {n:3,title:"How to Build Better Habits in 4 Simple Steps",done:true,pages:"pp. 50–68"},
-  {n:4,title:"The Man Who Didn't Look Right",done:false,pages:"pp. 69–82"},
-  {n:5,title:"The Best Way to Start a New Habit",done:false,pages:"pp. 83–96"},
-  {n:6,title:"Motivation Is Overrated; Environment Often Matters More",done:false,pages:"pp. 97–112"},
-];
- 
-const CHD={
-  title:"Chapter 1: The Surprising Power of Atomic Habits",
-  pageRange:"Pages 15–32",
-  summary:"James Clear opens the book with a compelling argument: small changes, consistently applied, compound into extraordinary results. He introduces the foundational concept of 'atomic habits' — behaviors so small they seem insignificant, yet form the building blocks of remarkable achievement. The chapter moves from personal anecdote to mathematical proof to real-world case study, establishing the book's central thesis.",
-  sections:[
-    {
-      pageRange:"Pages 15–18",heading:"Opening: The Author's Personal Story & the 1% Rule",
-      ideas:[
-        {text:"Clear begins with his own story — a high school baseball injury that left him in a coma, and the years-long recovery process where tiny daily improvements rebuilt his life and eventually made him an academic and athletic achiever at Denison University.",detail:"This personal narrative grounds the entire book in lived experience, not abstract theory. He went from barely functional to team captain by focusing on small, controllable actions daily."},
-        {text:"The 1% improvement rule: if you get 1% better each day, you'll end up 37.78 times better after one year (1.01^365 = 37.78). Conversely, getting 1% worse each day shrinks you to nearly zero (0.99^365 = 0.03).",detail:"This mathematical framing is the book's most viral concept. It reframes self-improvement from dramatic overhauls to patient consistency."},
-      ],
-      quotes:[{text:"Habits are the compound interest of self-improvement.",p:16},{text:"The same way that money multiplies through compound interest, the effects of your habits multiply as you repeat them.",p:16}],
-      stats:[{fig:"37.78×",note:"The compound result of 1% daily improvement over 365 days. Clear uses this as the mathematical backbone of the 'atomic' philosophy — small is not insignificant, it's exponential.",p:16}],
-      stories:[],
-      actions:["Calculate your own '1% today' — identify one tiny improvement you can make in the next hour."],
-      terms:[{t:"Atomic Habit",d:"A tiny, regular practice or routine that is both small and mighty — a component of a larger system of compound growth. 'Atomic' refers to both the small size and the enormous power."}],
-    },
-    {
-      pageRange:"Pages 18–21",heading:"Why Small Habits Don't Seem to Matter — Until They Do",
-      ideas:[
-        {text:"Clear introduces the concept of the 'Plateau of Latent Potential' — the frustrating period where effort seems wasted because results haven't materialized yet. Most people quit during this phase.",detail:"He compares this to an ice cube sitting in a cold room. You raise the temperature from 25°F to 31°F and nothing happens. At 32°F, the ice begins to melt. All the earlier work wasn't wasted — it was stored."},
-        {text:"Results are a lagging indicator of habits. Your current body is a lagging indicator of eating habits. Your bank account is a lagging indicator of financial habits. Your knowledge is a lagging indicator of learning habits.",detail:"This reframing is critical: it separates the feeling of progress (which is absent early on) from the reality of progress (which is accumulating invisibly)."},
-        {text:"Complaining about not achieving success despite hard work is like complaining about an ice cube not melting when you heated it from 25° to 31°. Your work was not wasted — it is being stored.",detail:"Clear's point: breakthrough moments are the result of many previous actions, not sudden events."},
-      ],
-      quotes:[{text:"When nothing seems to help, I go and look at a stonecutter hammering away at his rock, perhaps a hundred times without as much as a crack showing in it. Yet at the hundred and first blow it splits in two.",p:19},{text:"Time magnifies the margin between success and failure. It will multiply whatever you feed it.",p:18}],
-      stats:[],
-      stories:[
-        {title:"The Ice Cube Analogy",detail:"Imagine a room at 25°F. An ice cube sits on the table. You slowly raise the temperature: 26, 27, 28… nothing happens until 32°F, when the ice finally begins to melt. The previous degrees weren't pointless — they were prerequisites. Habits work identically.",p:20},
-        {title:"The Stonecutter Parable (Jacob Riis)",detail:"Clear quotes Jacob Riis's famous stonecutter metaphor: the stone splits not because of the 101st blow alone, but because of all 100 that came before. This reframes 'overnight success' as accumulated invisible effort.",p:19},
-      ],
-      actions:["Identify one area where you've quit because results felt too slow — reframe it as being in the 'Plateau of Latent Potential'.","Write down one lagging indicator in your life and trace it back to the habit (or lack thereof) that created it."],
-      terms:[
-        {t:"Plateau of Latent Potential",d:"The valley between starting a habit and seeing visible results. During this phase, effort is stored but not yet visible — leading most people to quit prematurely."},
-        {t:"Lagging Indicator",d:"A measure that reflects the cumulative result of past behaviors, not current effort. Weight, wealth, and knowledge are all lagging indicators of their respective habits."},
-      ],
-    },
-    {
-      pageRange:"Pages 22–25",heading:"Forget Goals, Focus on Systems",
-      ideas:[
-        {text:"Clear makes a controversial claim: goals are not what differentiate winners from losers. Winners and losers have the same goals — every Olympic athlete wants to win gold. What separates them is the system they follow.",detail:"This challenges the entire goal-setting industry. The implication: stop obsessing over the destination and start engineering the daily process."},
-        {text:"Four problems with goal-oriented thinking: (1) Winners and losers share the same goals. (2) Achieving a goal is only a momentary change. (3) Goals restrict happiness ('I'll be happy when…'). (4) Goals conflict with long-term progress — once achieved, motivation disappears.",detail:"Each problem is explored with a specific example, making this section the most tactical argument in the chapter."},
-        {text:"A systems-first mentality provides the antidote: you don't rise to the level of your goals, you fall to the level of your systems.",detail:"This is perhaps the single most quoted line from the book and encapsulates its entire philosophy."},
-      ],
-      quotes:[{text:"You do not rise to the level of your goals. You fall to the level of your systems.",p:27},{text:"Goals are good for setting a direction, but systems are best for making progress.",p:23},{text:"The purpose of setting goals is to win the game. The purpose of building systems is to continue playing the game.",p:25}],
-      stats:[],
-      stories:[{title:"The Gold Medal Paradox",detail:"Every Olympian at the starting line has the same goal: win gold. If the goal alone determined the outcome, every competitor would succeed equally. The difference is always the training system — the daily process, recovery protocol, and coaching methodology behind the performance.",p:24}],
-      actions:["Write down your top 3 goals. For each one, describe the system (daily process) that would lead to that outcome.","Ask yourself: 'If I completely forgot my goals but kept following my current daily system, would I still get results?'"],
-      terms:[{t:"System",d:"The collection of daily habits, routines, and processes that move you toward or away from an outcome — as opposed to a goal, which is a one-time target."}],
-    },
-    {
-      pageRange:"Pages 26–29",heading:"The Aggregation of Marginal Gains (British Cycling)",
-      ideas:[
-        {text:"Clear introduces the most memorable case study in the book: how Dave Brailsford transformed British Cycling from a laughing stock into the most dominant team in history — through the 'aggregation of marginal gains.'",detail:"Brailsford sought a 1% improvement in everything the team did, no matter how small or seemingly irrelevant."},
-        {text:"The improvements were absurdly small: redesigned bike seats, different massage gels, hand-washing protocols to avoid illness, team truck floor painted white to spot dust affecting bike maintenance.",detail:"No single improvement was significant. Stacked together, they created an unbeatable system."},
-        {text:"Within 5 years, British Cycling dominated the 2008 Beijing Olympics. Within 10 years, Bradley Wiggins became the first British Tour de France winner (2012), followed by Chris Froome winning four of the next five.",detail:"This case study is the chapter's proof-of-concept that 1% gains, compounded, create world-class results."},
-      ],
-      quotes:[{text:"The whole principle came from the idea that if you broke down everything you could think of that goes into riding a bike, and then improve it by 1 percent, you will get a significant increase when you put them all together.",p:27}],
-      stats:[
-        {fig:"5 years",note:"Time for British Cycling to go from near-zero Olympic medals to total domination at Beijing 2008, using only the aggregation of marginal gains.",p:28},
-        {fig:"10 golds",note:"British cyclists won 10 gold medals at Beijing 2008 — a transformation entirely attributed to Brailsford's marginal gains philosophy.",p:28},
-        {fig:"60%",note:"Of the gold medals available in cycling at the 2008 Olympics were won by the British team, a historically unprecedented dominance.",p:28},
-      ],
-      stories:[{title:"The British Cycling Transformation",detail:"When Dave Brailsford became performance director in 2003, British Cycling had won a single Olympic gold in its entire 100-year history. His approach: find 1% improvements in hundreds of small areas. Bike seat ergonomics. Pillow types for better sleep. Hand-washing protocols. Heated overshorts. Truck floor painted white. Within 5 years: 60% of cycling golds at Beijing. Within a decade: Tour de France champions.",p:"26–29"}],
-      actions:["List 10 small things in your daily routine (sleep, commute, meals, work setup). For each, identify one 1% improvement.","Pick the 3 easiest improvements from your list and implement them this week."],
-      terms:[{t:"Aggregation of Marginal Gains",d:"The philosophy of searching for a tiny margin of improvement in everything you do. Hundreds of small improvements, each worth perhaps 1%, compound into a formidable collective advantage."}],
-    },
-    {
-      pageRange:"Pages 29–32",heading:"Chapter Summary & The Road Ahead",
-      ideas:[
-        {text:"Clear synthesizes the chapter's argument: (1) Habits are compound interest. (2) Small changes appear meaningless in the moment but deliver extraordinary results over time. (3) Forget goals — build systems. (4) You don't need to overhaul your life, you need better habits.",detail:"This closing section bridges to the rest of the book, which will teach the tactical 'how' of building these atomic habits."},
-        {text:"The chapter ends with a forward-looking promise: the remaining chapters will teach a four-step framework (Cue → Craving → Response → Reward) and show exactly how to design habits using each step.",detail:"This sets up the reader for the 'Four Laws of Behavior Change' framework that structures the rest of the book."},
-      ],
-      quotes:[{text:"If you want better results, then forget about setting goals. Focus on your system instead.",p:31}],
-      stats:[],stories:[],
-      actions:["Before reading Chapter 2, write a one-sentence answer: 'What system am I currently running that produced my current results?'"],
-      terms:[{t:"Four Laws of Behavior Change",d:"The tactical framework introduced in the next chapters: Make It Obvious, Make It Attractive, Make It Easy, Make It Satisfying — the four levers for building any habit."}],
-    },
-  ],
-};
- 
-const MMAP={
-  center:"Ch.1: Atomic Habits",
-  branches:[
-    {label:"1% Rule",lc:"#8B6914",dc:"#D4A843",ch:["37× / year","Compound growth","Math proof"]},
-    {label:"Systems > Goals",lc:"#5A7A4A",dc:"#7AAE5E",ch:["Same goals fallacy","Process over outcome","Long-term play"]},
-    {label:"Plateau of\nLatent Potential",lc:"#7B5B2A",dc:"#C49A4A",ch:["Ice cube analogy","Invisible progress","Don't quit early"]},
-    {label:"Marginal Gains",lc:"#A0422A",dc:"#D06040",ch:["British Cycling","1% everywhere","5yr transform"]},
-  ],
-};
- 
-const QAI=[
-  {role:"user",text:"What does the author say about goals vs systems?"},
-  {role:"ai",text:"Clear argues that goals are inadequate for lasting change because winners and losers typically share identical goals — every Olympic athlete wants gold. The differentiator is always the system: the daily process of training, recovery, and refinement. He identifies four specific problems with goal-oriented thinking: they don't distinguish you from competitors, achieving one creates only momentary change, they defer happiness to a future condition, and they remove motivation once reached. His conclusion: 'You do not rise to the level of your goals. You fall to the level of your systems.' (Chapter 1, pages 22–27)",sources:["Ch. 1, pp. 22–27"]},
-];
- 
-/* ── SHARED COMPONENTS ── */
-function ThemeToggle(){const{dk,tog}=useT();const C=dk?TH.dark:TH.light;return<button onClick={tog} aria-label="Toggle dark mode" style={{...nB(C),width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:C.acc}}>{dk?"☀️":"🌙"}</button>;}
- 
-function Nav({scr,onNav,sub}){const{dk}=useT();const C=dk?TH.dark:TH.light;
-return<div style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:10,background:C.bg,boxShadow:`0 2px 8px ${C.shD}`,zIndex:100,flexShrink:0}}>
-  {scr!==S.LIB&&<button onClick={()=>onNav(sub?S.OV:S.LIB)} style={{...nB(C),width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:C.acc}}>←</button>}
-  <div style={{flex:1}}><div style={{fontFamily:fD,fontSize:24,fontWeight:700,color:C.acc,letterSpacing:.3}}>BookBrain</div></div>
-  {sub&&<span style={{fontFamily:fB,fontSize:11,color:C.tx3,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</span>}
-  <ThemeToggle/>
-</div>;}
- 
-function Bar({scr,onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
-const items=[{s:S.LIB,icon:"📚",lb:"Library"},{s:S.DIG,icon:"📅",lb:"Daily"},{s:S.EXP,icon:"📤",lb:"Export"}];
-return<div style={{display:"flex",padding:"8px 16px 10px",background:C.bg,boxShadow:`0 -2px 8px ${C.shD}`,flexShrink:0}}>
-  {items.map(t=><button key={t.s} onClick={()=>onNav(t.s)} style={{flex:1,padding:"8px 0",background:"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-    <span style={{fontSize:18}}>{t.icon}</span>
-    <span style={{fontFamily:fB,fontSize:11,color:scr===t.s?C.acc:C.tx3,fontWeight:scr===t.s?700:400}}>{t.lb}</span>
-  </button>)}
-</div>;}
- 
-function Tag({children,color}){const{dk}=useT();const C=dk?TH.dark:TH.light;const c=color||C.acc;return<span style={{display:"inline-block",padding:"4px 12px",borderRadius:20,fontFamily:fB,fontSize:11,fontWeight:600,color:c,background:`${c}15`,marginRight:6,marginBottom:4}}>{children}</span>;}
- 
-function Prog({value,color}){const{dk}=useT();const C=dk?TH.dark:TH.light;const c=color||C.acc;return<div style={{...nI(C),height:8,borderRadius:8,overflow:"hidden",padding:0}}><div style={{width:`${value}%`,height:"100%",borderRadius:8,background:`linear-gradient(90deg,${c},${C.accL})`,transition:"width .6s"}}/></div>;}
- 
-/* ── LIBRARY ── */
-function Lib({onNav,onSel}){const{dk}=useT();const C=dk?TH.dark:TH.light;const[q,sQ]=useState("");
-return<div style={{padding:20}}>
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
-    <div><h1 style={{fontFamily:fD,fontSize:28,fontWeight:700,color:C.tx}}>My Library</h1>
-    <p style={{fontFamily:fB,fontSize:12,color:C.tx3,marginTop:4}}>{BOOKS.length} books · {BOOKS.reduce((a,b)=>a+b.chapters,0)} chapters extracted</p></div>
-    <button onClick={()=>onNav(S.UP)} style={{...nB(C),width:46,height:46,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,color:C.acc}}>+</button>
+/* ══ LIBRARY ══ */
+function Lib({books,onNav,onSel}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+return<div style={{padding:14}}>
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+    <div><h1 style={{fontFamily:fD,fontSize:25,fontWeight:700,color:C.tx}}>My Library</h1><p style={{fontFamily:fB,fontSize:11,color:C.tx3,marginTop:2}}>{books.length} book{books.length!==1?'s':''}</p></div>
+    <button onClick={()=>onNav(SC.UP)} style={{...nB(C),width:46,height:46,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:21,color:C.acc}}>+</button>
   </div>
-  <div style={{...nI(C),padding:0,marginBottom:18}}><input value={q} onChange={e=>sQ(e.target.value)} placeholder="Search your books..." style={{width:"100%",padding:"13px 18px",borderRadius:16,border:"none",background:"transparent",color:C.tx,fontFamily:fB,fontSize:14,outline:"none",boxSizing:"border-box"}}/></div>
-  <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    {BOOKS.filter(b=>b.title.toLowerCase().includes(q.toLowerCase())).map(b=>(
-      <div key={b.id} onClick={()=>{if(b.proc){return;}onSel(b);onNav(S.OV);}} style={{...nC(C),padding:18,cursor:b.proc?"default":"pointer",display:"flex",gap:14,alignItems:"center",opacity:b.proc?.7:1}}>
-        <div style={{...nI(C),width:54,height:68,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>{b.emoji}</div>
-        <div style={{flex:1,minWidth:0}}>
-          <h3 style={{fontFamily:fD,fontSize:17,fontWeight:700,color:C.tx,margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.title}</h3>
-          <p style={{fontFamily:fB,fontSize:12,color:C.tx3,margin:"3px 0 8px"}}>{b.author} · {b.chapters} ch.</p>
-          <Prog value={b.progress} color={b.proc?C.warn:C.acc}/>
-          <span style={{fontFamily:fM,fontSize:11,color:b.proc?C.warn:C.tx3,marginTop:4,display:"block"}}>{b.proc?"Processing…":`${b.progress}% explored`}</span>
-        </div>
-      </div>
-    ))}
-  </div>
-</div>;}
- 
-/* ── UPLOAD ── */
-function Upload({onNav,onFile}){const{dk}=useT();const C=dk?TH.dark:TH.light;
-const fileRef=useRef(null);
-const[file,setFile]=useState(null);
-const[err,setErr]=useState("");
-const handlePick=()=>{fileRef.current?.click();};
-const handleFile=e=>{
-  const f=e.target.files?.[0];
-  if(!f)return;
-  setErr("");
-  const ext=f.name.split('.').pop().toLowerCase();
-  if(ext!=="pdf"&&ext!=="epub"){setErr("Only PDF and EPUB files are supported.");return;}
-  if(f.size>100*1024*1024){setErr("File too large. Maximum size is 100 MB.");return;}
-  setFile(f);
-  onFile(f.name.replace(/\.[^.]+$/,''));
-};
-const handleStart=()=>{if(file){onNav(S.PROC);}};
-return<div style={{padding:20,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1}}>
-  <input ref={fileRef} type="file" accept=".pdf,.epub" onChange={handleFile} style={{display:"none"}}/>
-  {!file?<div onClick={handlePick} style={{...nC(C),width:"100%",maxWidth:360,height:240,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,cursor:"pointer"}}>
-    <div style={{...nI(C),width:76,height:76,borderRadius:24,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34}}>📄</div>
-    <p style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx}}>Tap to select your book</p>
-    <p style={{fontFamily:fB,fontSize:13,color:C.tx3}}>Choose a PDF or EPUB file</p>
-    <div style={{display:"flex",gap:6}}><Tag>PDF</Tag><Tag>EPUB</Tag><Tag>≤ 100 MB</Tag></div>
-    {err&&<p style={{fontFamily:fB,fontSize:12,color:C.dng,marginTop:4,textAlign:"center"}}>{err}</p>}
-  </div>:
-  <div style={{width:"100%",maxWidth:360}}>
-    <div style={{...nC(C),padding:22,display:"flex",flexDirection:"column",alignItems:"center",gap:14}}>
-      <div style={{...nI(C),width:76,height:76,borderRadius:24,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34}}>{file.name.endsWith('.epub')?"📕":"📄"}</div>
-      <div style={{textAlign:"center"}}>
-        <p style={{fontFamily:fD,fontSize:18,fontWeight:700,color:C.tx,margin:"0 0 4px",wordBreak:"break-word"}}>{file.name}</p>
-        <p style={{fontFamily:fM,fontSize:12,color:C.tx3}}>{(file.size/1024/1024).toFixed(1)} MB</p>
-      </div>
-      <button onClick={handleStart} style={{...nB(C),width:"100%",padding:"14px 0",fontFamily:fD,fontSize:16,fontWeight:700,color:C.acc}}>
-        🧠 Start AI Extraction →
-      </button>
-      <button onClick={()=>{setFile(null);setErr("");}} style={{...nB(C),width:"100%",padding:"10px 0",fontFamily:fB,fontSize:13,fontWeight:600,color:C.tx3}}>
-        Choose different file
-      </button>
-    </div>
-  </div>}
-</div>;}
- 
-/* ── PROCESSING ── */
-function Proc({onNav,onSel,fileName}){const{dk}=useT();const C=dk?TH.dark:TH.light;
-const name=fileName||"Your Book";
-const[st,setSt]=useState(0);
-const stages=[
-  {icon:"📄",lb:"Parsing file…",sub:`Extracting text from ${name}`},
-  {icon:"📑",lb:"Detecting chapters…",sub:"Scanning for chapter boundaries via TOC and headings"},
-  {icon:"🧠",lb:"AI extraction running…",sub:"Gemma 4 extracting ideas, quotes, stories, stats…"},
-  {icon:"🗺️",lb:"Building mind maps…",sub:"Generating visual structure for each chapter"},
-  {icon:"🔍",lb:"Indexing for Q&A…",sub:"Creating embeddings for intelligent search"},
-  {icon:"✅",lb:"Complete!",sub:`${name} is ready to explore`},
-];
-const started=useRef(false);
-if(!started.current){started.current=true;let i=0;const tick=()=>{if(i<stages.length-1){i++;setSt(i);if(i<stages.length-1)setTimeout(tick,1800);}};setTimeout(tick,1800);}
-return<div style={{padding:20,display:"flex",flexDirection:"column",alignItems:"center",flex:1,justifyContent:"center"}}>
-  <div style={{width:"100%",maxWidth:360}}>
-    <div style={{textAlign:"center",marginBottom:24}}>
-      <div style={{fontSize:48,marginBottom:10}}>{stages[st].icon}</div>
-      <h2 style={{fontFamily:fD,fontSize:22,fontWeight:700,color:C.tx,margin:"0 0 4px"}}>{stages[st].lb}</h2>
-      <p style={{fontFamily:fB,fontSize:13,color:C.tx3}}>{stages[st].sub}</p>
-    </div>
-    <div style={{display:"flex",flexDirection:"column",gap:8}}>
-      {stages.map((s,i)=><div key={i} style={{...(i===st?nC(C):i<st?{...nC(C),boxShadow:sh(C,true,.5)}:{opacity:.4}),padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:14,width:22,textAlign:"center"}}>{i<st?"✓":s.icon}</span>
-        <span style={{fontFamily:fB,fontSize:12,color:i<=st?C.tx:C.tx3,fontWeight:i===st?700:400}}>{s.lb}</span>
-      </div>)}
-    </div>
-    <p style={{fontFamily:fM,fontSize:11,color:C.tx3,textAlign:"center",marginTop:14}}>This is a prototype demo — actual AI processing requires Gemma 4 setup</p>
-    {st===stages.length-1&&<button onClick={()=>{onSel(BOOKS[0]);onNav(S.OV);}} style={{...nB(C),width:"100%",marginTop:16,padding:"14px 0",fontSize:15,fontWeight:700,color:C.acc,fontFamily:fD}}>Explore Demo Breakdown →</button>}
-  </div>
-</div>;}
- 
-/* ── OVERVIEW ── */
-function Ov({book,onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
-return<div style={{padding:20}}>
-  <div style={{...nC(C),padding:18,display:"flex",gap:16,marginBottom:18}}>
-    <div style={{...nI(C),width:68,height:90,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,flexShrink:0}}>{book.emoji}</div>
-    <div><h1 style={{fontFamily:fD,fontSize:22,fontWeight:700,color:C.tx,lineHeight:1.2}}>{book.title}</h1>
-    <p style={{fontFamily:fB,fontSize:12,color:C.tx3,margin:"4px 0 8px"}}>by {book.author}</p>
-    <Tag>{book.chapters} Chapters</Tag><Tag color={C.ok}>{book.progress}%</Tag></div>
-  </div>
-  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-    {[{icon:"🗺️",lb:"Mind Map",s:S.MM},{icon:"💬",lb:"Ask Q&A",s:S.QA},{icon:"📅",lb:"Daily Digest",s:S.DIG},{icon:"📤",lb:"Export .docx",s:S.EXP}].map(a=>(
-      <button key={a.lb} onClick={()=>onNav(a.s)} style={{...nB(C),padding:"16px 10px",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
-        <span style={{fontSize:22}}>{a.icon}</span>
-        <span style={{fontFamily:fB,fontSize:13,fontWeight:600,color:C.tx}}>{a.lb}</span>
-      </button>
-    ))}
-  </div>
-  <h2 style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx,margin:"0 0 12px"}}>Chapters</h2>
+  {!books.length&&<div style={{...nI(C),padding:22,textAlign:"center",borderRadius:18}}><div style={{fontSize:36,marginBottom:8}}>📚</div><p style={{fontFamily:fD,fontSize:17,fontWeight:700,color:C.tx,marginBottom:4}}>No books yet</p><p style={{fontFamily:fB,fontSize:12,color:C.tx3,marginBottom:12}}>Upload a PDF or EPUB to get started</p><button onClick={()=>onNav(SC.UP)} style={{...nB(C),padding:"10px 22px",fontFamily:fD,fontSize:14,fontWeight:700,color:C.acc}}>+ Add Book</button></div>}
   <div style={{display:"flex",flexDirection:"column",gap:10}}>
-    {CHS.map(ch=>(
-      <div key={ch.n} onClick={()=>onNav(S.CH)} style={{...nC(C),padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
-        <div style={{...(ch.done?nI(C):nC(C)),width:34,height:34,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontFamily:fM,fontWeight:700,color:ch.done?C.ok:C.tx3,flexShrink:0}}>{ch.done?"✓":ch.n}</div>
-        <div style={{flex:1,minWidth:0}}>
-          <span style={{fontFamily:fB,fontSize:13,color:C.tx,fontWeight:500,display:"block"}}>{ch.title}</span>
-          <span style={{fontFamily:fM,fontSize:11,color:C.tx3}}>{ch.pages}</span>
-        </div>
-        <span style={{color:C.tx3}}>›</span>
-      </div>
-    ))}
+    {books.map(b=><div key={b.id} onClick={()=>{onSel(b.id);onNav(SC.OV);}} style={{...nC(C),padding:14,cursor:"pointer",display:"flex",gap:10,alignItems:"center"}}>
+      <div style={{...nI(C),width:46,height:58,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{b.isEpub?"📕":"📄"}</div>
+      <div style={{flex:1,minWidth:0}}><h3 style={{fontFamily:fD,fontSize:15,fontWeight:700,color:C.tx,margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.title}</h3><p style={{fontFamily:fB,fontSize:10,color:C.tx3,margin:"2px 0 5px"}}>{b.chapters.length} ch · {b.pages.length} pg</p><Prog value={100} color={C.ok}/></div>
+    </div>)}
   </div>
 </div>;}
  
-/* ── CHAPTER BREAKDOWN ── */
-function Ch(){const{dk}=useT();const C=dk?TH.dark:TH.light;
-const[tab,sTab]=useState("all");const d=CHD;
+/* ══ UPLOAD ══ */
+function UL({onNav,onProcess}){const{dk}=useT();const C=dk?TH.dark:TH.light;const[file,sF]=useState(null);const[err,sE]=useState("");
+const hf=e=>{const f=e.target.files?.[0];if(!f)return;sE("");const ext=f.name.split('.').pop().toLowerCase();if(ext!=='pdf'&&ext!=='epub'){sE("Only PDF and EPUB supported.");return;}if(f.size>100*1024*1024){sE("Max 100MB.");return;}sF(f);};
+return<div style={{padding:14,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,gap:12}}>
+  {!file?<div style={{...nC(C),width:"100%",maxWidth:320,height:190,position:"relative"}}><label className="flbl" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",width:"100%",height:"100%",gap:6,padding:14}}><input type="file" accept=".pdf,.epub,application/pdf,application/epub+zip" onChange={hf} style={{position:"absolute",width:1,height:1,opacity:0}}/><div style={{...nI(C),width:58,height:58,borderRadius:18,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>📄</div><p style={{fontFamily:fD,fontSize:16,fontWeight:700,color:C.tx,textAlign:"center"}}>Tap to select your book</p><p style={{fontFamily:fB,fontSize:11,color:C.tx3}}>PDF or EPUB · up to 100MB</p></label></div>:
+  <div style={{...nC(C),width:"100%",maxWidth:320,padding:18,display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+    <div style={{fontSize:32}}>{file.name.toLowerCase().endsWith('.epub')?"📕":"📄"}</div>
+    <p style={{fontFamily:fD,fontSize:15,fontWeight:700,color:C.tx,textAlign:"center",wordBreak:"break-word"}}>{file.name}</p>
+    <p style={{fontFamily:fM,fontSize:10,color:C.tx3}}>{(file.size/1024/1024).toFixed(1)} MB</p>
+    <button onClick={()=>onProcess(file)} style={{...nB(C),width:"100%",padding:"12px 0",fontFamily:fD,fontSize:14,fontWeight:700,color:C.acc}}>🧠 Extract Insights →</button>
+    <button onClick={()=>sF(null)} style={{...nB(C),width:"100%",padding:"8px 0",fontFamily:fB,fontSize:11,color:C.tx3}}>Choose different file</button>
+  </div>}
+  {err&&<p style={{fontFamily:fB,fontSize:11,color:C.dng}}>{err}</p>}
+</div>;}
+ 
+/* ══ PROCESSING ══ */
+function Proc({file,onDone}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const[stg,sStg]=useState('parse');const[prog,sProg]=useState('');const[pct,sPct]=useState(0);const[err,sErr]=useState('');
+const ran=useRef(false);
+useEffect(()=>{if(ran.current)return;ran.current=true;(async()=>{try{
+  const isE=file.name.toLowerCase().endsWith('.epub');
+  sStg('parse');sProg(isE?'Reading EPUB…':'Extracting text…');
+  const pages=isE?await parseEPUB(file,(i,n)=>{sPct(Math.round(i/n*100));sProg(`Reading ${i}/${n}`);}):await parsePDF(file,(i,n)=>{sPct(Math.round(i/n*100));sProg(`Page ${i}/${n}`);});
+  if(pages.length<1){sErr('No readable text found. File may be scanned/image-based.');return;}
+  sStg('chapters');sProg('Detecting chapters…');sPct(0);await new Promise(r=>setTimeout(r,200));
+  const chs=detectChapters(pages,isE);sProg(`Found ${chs.length} chapter${chs.length!==1?'s':''}`);await new Promise(r=>setTimeout(r,400));
+  sStg('extract');
+  for(let i=0;i<chs.length;i++){sProg(`Ch. ${i+1}/${chs.length}: ${chs[i].title.slice(0,25)}…`);sPct(Math.round(i/chs.length*100));chs[i].insights=heuristicExtract(chs[i].pidx,pages);chs[i].done=true;await new Promise(r=>setTimeout(r,80));}
+  sPct(100);sStg('done');sProg('Complete!');
+  const title=file.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
+  setTimeout(()=>onDone({id:Date.now().toString(),title,fileName:file.name,pages,chapters:chs,isEpub:isE}),500);
+}catch(e){sErr(e.message||'Failed');}})();},[file]);
+const ic={parse:'📄',chapters:'📑',extract:'🧠',done:'✅'};const lb={parse:'Parsing',chapters:'Chapters',extract:'Extracting',done:'Done'};
+return<div style={{padding:14,display:"flex",flexDirection:"column",alignItems:"center",flex:1,justifyContent:"center"}}>
+  <div style={{width:"100%",maxWidth:320,textAlign:"center"}}>
+    {err?<><div style={{fontSize:36,marginBottom:8}}>⚠️</div><p style={{fontFamily:fD,fontSize:18,fontWeight:700,color:C.dng,marginBottom:4}}>Error</p><p style={{fontFamily:fB,fontSize:12,color:C.tx2}}>{err}</p></>:<>
+    <div style={{fontSize:40,marginBottom:8}}>{ic[stg]}</div><h2 style={{fontFamily:fD,fontSize:19,fontWeight:700,color:C.tx,marginBottom:3}}>{lb[stg]}</h2><p style={{fontFamily:fB,fontSize:12,color:C.tx3,marginBottom:12}}>{prog}</p><Prog value={pct} color={stg==='done'?C.ok:C.acc}/>
+    <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:14,textAlign:"left"}}>{['parse','chapters','extract','done'].map(s=>{const cur=s===stg;const dn=['parse','chapters','extract','done'].indexOf(s)<['parse','chapters','extract','done'].indexOf(stg);return<div key={s} style={{...(dn?{...nC(C),boxShadow:sh(C,true,.5)}:cur?nC(C):{opacity:.35,...nC(C)}),padding:"7px 10px",display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:12}}>{dn?"✓":ic[s]}</span><span style={{fontFamily:fB,fontSize:11,color:dn||cur?C.tx:C.tx3,fontWeight:cur?700:400}}>{lb[s]}</span></div>;})}</div></>}
+  </div>
+</div>;}
+ 
+/* ══ OVERVIEW ══ */
+function Ov({book,onNav,onCh,engine,gLoading,gProg,gErr,onLoadGemma,onEnhanceAll}){const{dk}=useT();const C=dk?TH.dark:TH.light;if(!book)return null;
+const tot=book.chapters.reduce((s,c)=>{const i=c.insights;return i?s+i.ideas.length+i.quotes.length+i.stories.length+i.stats.length+i.actions.length+i.terms.length:s;},0);
+const hasAI=book.chapters.some(c=>c.insights?.mode==='gemma');
+return<div style={{padding:14}}>
+  <div style={{...nC(C),padding:14,marginBottom:12}}>
+    <h1 style={{fontFamily:fD,fontSize:19,fontWeight:700,color:C.tx,lineHeight:1.2}}>{book.title}</h1>
+    <p style={{fontFamily:fB,fontSize:10,color:C.tx3,margin:"3px 0 6px"}}>{book.fileName} · {book.pages.length} pages</p>
+    <div style={{display:"flex",gap:3,flexWrap:"wrap"}}><Tag>{book.chapters.length} Ch.</Tag><Tag color={C.ok}>{tot} insights</Tag>{hasAI&&<Tag color={C.warn}>Gemma AI</Tag>}</div>
+    <GemmaBtn engine={engine} loading={gLoading} progress={gProg} error={gErr} onLoad={onLoadGemma} onEnhance={onEnhanceAll} label={engine?'Re-extract All with Gemma AI':'Enable Gemma AI for All Chapters'}/>
+  </div>
+  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+    {[{ic:"🗺️",lb:"Mind Map",s:SC.MM},{ic:"💬",lb:"Q&A",s:SC.QA},{ic:"📤",lb:"Export",s:SC.EXP}].map(a=><button key={a.lb} onClick={()=>onNav(a.s)} style={{...nB(C),padding:"12px 6px",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}><span style={{fontSize:18}}>{a.ic}</span><span style={{fontFamily:fB,fontSize:11,fontWeight:600,color:C.tx}}>{a.lb}</span></button>)}
+  </div>
+  <h2 style={{fontFamily:fD,fontSize:17,fontWeight:700,color:C.tx,marginBottom:8}}>Chapters</h2>
+  <div style={{display:"flex",flexDirection:"column",gap:7}}>
+    {book.chapters.map((ch,i)=>{const ins=ch.insights;const cnt=ins?ins.ideas.length+ins.quotes.length+ins.stats.length:0;
+    return<div key={i} onClick={()=>{onCh(i);onNav(SC.CH);}} style={{...nC(C),padding:"9px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:9}}>
+      <div style={{...nI(C),width:30,height:30,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:fM,fontSize:10,fontWeight:700,color:C.ok,flexShrink:0}}>✓</div>
+      <div style={{flex:1,minWidth:0}}><span style={{fontFamily:fB,fontSize:12,color:C.tx,fontWeight:500,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ch.title}</span><span style={{fontFamily:fM,fontSize:9,color:C.tx3}}>pp.{ch.ps}–{ch.pe} · {cnt} · {ins?.mode==='gemma'?'🧠 AI':'📊 Smart'}</span></div>
+      <span style={{color:C.tx3,fontSize:12}}>›</span>
+    </div>;})}
+  </div>
+</div>;}
+ 
+/* ══ CHAPTER ══ */
+function ChV({chapter,engine,gLoading,gProg,gErr,onLoadGemma,onEnhanceCh,onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+if(!chapter?.insights)return<p style={{padding:16,color:C.tx3}}>No data</p>;
+const d=chapter.insights;const[tab,sTab]=useState("all");const[ck,sCk]=useState({});
 const tabs=[{id:"all",lb:"All",ic:"📋"},{id:"ideas",lb:"Ideas",ic:"💡"},{id:"quotes",lb:"Quotes",ic:"✦"},{id:"stories",lb:"Stories",ic:"📖"},{id:"stats",lb:"Stats",ic:"📊"},{id:"actions",lb:"Actions",ic:"✅"},{id:"terms",lb:"Terms",ic:"🏷️"}];
-const[ck,sCk]=useState({});
-return<div style={{padding:20}}>
-  <h1 style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx,margin:"0 0 4px",lineHeight:1.3}}>{d.title}</h1>
-  <p style={{fontFamily:fM,fontSize:11,color:C.tx3,margin:"0 0 12px"}}>{d.pageRange}</p>
-  <div style={{...nI(C),padding:14,borderRadius:16,marginBottom:16}}>
-    <p style={{fontFamily:fQ,fontSize:14,color:C.tx2,lineHeight:1.7,fontStyle:"italic",margin:0}}>{d.summary}</p>
+const show=(t,arr)=>(tab==="all"||tab===t)&&arr?.length>0;
+return<div style={{padding:14}}>
+  <h1 style={{fontFamily:fD,fontSize:17,fontWeight:700,color:C.tx,lineHeight:1.3,marginBottom:1}}>{chapter.title}</h1>
+  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontFamily:fM,fontSize:9,color:C.tx3}}>pp. {chapter.ps}–{chapter.pe}</span><Tag color={d.mode==='gemma'?C.warn:C.acc}>{d.mode==='gemma'?'🧠 Gemma AI':'📊 Smart Extract'}</Tag></div>
+  {d.summary&&<div style={{...nI(C),padding:10,borderRadius:12,marginBottom:10}}><p style={{fontFamily:fQ,fontSize:12,color:C.tx2,lineHeight:1.65,fontStyle:"italic",margin:0}}>{d.summary}</p></div>}
+  <GemmaBtn engine={engine} loading={gLoading} progress={gProg} error={gErr} onLoad={onLoadGemma} onEnhance={onEnhanceCh} label={engine?(d.mode==='gemma'?'✓ AI extracted':'Re-extract this chapter with Gemma'):'Enable Gemma AI for this chapter'}/>
+  <div style={{display:"flex",gap:3,overflowX:"auto",paddingBottom:3,margin:"10px 0",WebkitOverflowScrolling:"touch"}}>
+    {tabs.map(t=><button key={t.id} onClick={()=>sTab(t.id)} style={{...(tab===t.id?{...nB(C),boxShadow:shP(C)}:nB(C)),padding:"5px 9px",fontSize:10,fontWeight:600,color:tab===t.id?C.acc:C.tx3,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:2,flexShrink:0}}>{t.ic} {t.lb}</button>)}
   </div>
-  <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:6,marginBottom:16,WebkitOverflowScrolling:"touch"}}>
-    {tabs.map(t=><button key={t.id} onClick={()=>sTab(t.id)} style={{...(tab===t.id?{...nB(C),boxShadow:shP(C)}:nB(C)),padding:"6px 12px",fontSize:12,fontWeight:600,color:tab===t.id?C.acc:C.tx3,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4,flexShrink:0}}>{t.ic} {t.lb}</button>)}
-  </div>
-  {d.sections.map((sec,si)=>{
-    const has=(tab==="all")||(tab==="ideas"&&sec.ideas.length)||(tab==="quotes"&&sec.quotes.length)||(tab==="stories"&&sec.stories.length)||(tab==="stats"&&sec.stats.length)||(tab==="actions"&&sec.actions.length)||(tab==="terms"&&sec.terms.length);
-    if(!has)return null;
-    return<div key={si} style={{marginBottom:22}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-        <div style={{...nI(C),padding:"4px 10px",borderRadius:10}}><span style={{fontFamily:fM,fontSize:11,fontWeight:700,color:C.acc}}>{sec.pageRange}</span></div>
-        <span style={{fontFamily:fD,fontSize:15,fontWeight:700,color:C.tx}}>{sec.heading}</span>
-      </div>
-      {(tab==="all"||tab==="ideas")&&sec.ideas.map((x,i)=>(
-        <details key={`i${si}${i}`} style={{...nC(C),overflow:"hidden",marginBottom:8}}>
-          <summary style={{padding:"12px 16px",fontFamily:fB,fontSize:13,fontWeight:600,color:C.tx,cursor:"pointer",display:"flex",gap:8,lineHeight:1.5}}><span style={{color:C.acc,flexShrink:0}}>💡</span>{x.text}</summary>
-          <div style={{padding:"0 16px 12px 40px"}}><p style={{fontFamily:fQ,fontSize:13,color:C.tx2,lineHeight:1.7,fontStyle:"italic",margin:0}}>{x.detail}</p></div>
-        </details>
-      ))}
-      {(tab==="all"||tab==="quotes")&&sec.quotes.map((x,i)=>(
-        <div key={`q${si}${i}`} style={{...nI(C),padding:"12px 16px",marginBottom:8,borderLeft:`3px solid ${C.qt}`,borderRadius:"4px 14px 14px 4px"}}>
-          <p style={{fontFamily:fQ,fontSize:15,color:C.tx,fontStyle:"italic",lineHeight:1.6,margin:"0 0 4px"}}>"{x.text}"</p>
-          <span style={{fontFamily:fM,fontSize:11,color:C.tx3}}>— p. {x.p}</span>
-        </div>
-      ))}
-      {(tab==="all"||tab==="stories")&&sec.stories.map((x,i)=>(
-        <details key={`s${si}${i}`} style={{...nC(C),overflow:"hidden",marginBottom:8}}>
-          <summary style={{padding:"12px 16px",fontFamily:fB,fontSize:13,fontWeight:600,color:C.tx,cursor:"pointer"}}><span style={{marginRight:6}}>📖</span>{x.title}{x.p&&<span style={{fontFamily:fM,fontSize:11,color:C.tx3,marginLeft:8}}>p.{x.p}</span>}</summary>
-          <div style={{padding:"0 16px 12px"}}><p style={{fontFamily:fD,fontSize:13,color:C.tx2,lineHeight:1.7,margin:0}}>{x.detail}</p></div>
-        </details>
-      ))}
-      {(tab==="all"||tab==="stats")&&sec.stats.map((x,i)=>(
-        <div key={`st${si}${i}`} style={{...nC(C),padding:16,marginBottom:8}}>
-          <div style={{fontFamily:fM,fontSize:28,fontWeight:700,color:C.acc,marginBottom:4,letterSpacing:-1}}>{x.fig}</div>
-          <p style={{fontFamily:fD,fontSize:13,color:C.tx2,lineHeight:1.6,margin:"0 0 4px"}}>{x.note}</p>
-          <span style={{fontFamily:fM,fontSize:11,color:C.tx3}}>p. {x.p}</span>
-        </div>
-      ))}
-      {(tab==="all"||tab==="actions")&&sec.actions.map((x,i)=>{
-        const k=`${si}-${i}`;
-        return<div key={k} onClick={()=>sCk(p=>({...p,[k]:!p[k]}))} style={{...nC(C),padding:"10px 14px",marginBottom:7,cursor:"pointer",display:"flex",alignItems:"flex-start",gap:10}}>
-          <div style={{...(ck[k]?nI(C):nC(C)),width:20,height:20,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.ok,flexShrink:0,marginTop:2}}>{ck[k]&&"✓"}</div>
-          <span style={{fontFamily:fB,fontSize:13,color:ck[k]?C.tx3:C.tx,textDecoration:ck[k]?"line-through":"none",lineHeight:1.5}}>{x}</span>
-        </div>;
-      })}
-      {(tab==="all"||tab==="terms")&&sec.terms.map((x,i)=>(
-        <div key={`t${si}${i}`} style={{...nC(C),padding:"12px 16px",marginBottom:8}}>
-          <div style={{fontFamily:fD,fontSize:15,fontWeight:700,color:C.acc,marginBottom:4}}>{x.t}</div>
-          <p style={{fontFamily:fQ,fontSize:13,color:C.tx2,lineHeight:1.6,fontStyle:"italic",margin:0}}>{x.d}</p>
-        </div>
-      ))}
-    </div>;
-  })}
+  {show("ideas",d.ideas)&&d.ideas.map((x,i)=><details key={`i${i}`} style={{...nC(C),overflow:"hidden",marginBottom:5}}><summary style={{padding:"9px 12px",fontFamily:fB,fontSize:11,fontWeight:600,color:C.tx,cursor:"pointer",display:"flex",gap:5,lineHeight:1.5}}><span style={{color:C.acc,flexShrink:0}}>💡</span>{x.text}</summary><div style={{padding:"0 12px 8px 30px"}}><p style={{fontFamily:fQ,fontSize:11,color:C.tx2,lineHeight:1.6,fontStyle:"italic",margin:0}}>{x.detail}</p></div></details>)}
+  {show("quotes",d.quotes)&&d.quotes.map((x,i)=><div key={`q${i}`} style={{...nI(C),padding:"9px 12px",marginBottom:5,borderLeft:`3px solid ${C.qt}`,borderRadius:"3px 12px 12px 3px"}}><p style={{fontFamily:fQ,fontSize:13,color:C.tx,fontStyle:"italic",lineHeight:1.55,margin:"0 0 2px"}}>"{x.text}"</p>{x.p>0&&<span style={{fontFamily:fM,fontSize:9,color:C.tx3}}>p.{x.p}</span>}</div>)}
+  {show("stories",d.stories)&&d.stories.map((x,i)=><details key={`s${i}`} style={{...nC(C),overflow:"hidden",marginBottom:5}}><summary style={{padding:"9px 12px",fontFamily:fB,fontSize:11,fontWeight:600,color:C.tx,cursor:"pointer"}}><span style={{marginRight:3}}>📖</span>{x.title}</summary><div style={{padding:"0 12px 8px"}}><p style={{fontFamily:fD,fontSize:11,color:C.tx2,lineHeight:1.6,margin:0}}>{x.detail}</p></div></details>)}
+  {show("stats",d.stats)&&d.stats.map((x,i)=><div key={`st${i}`} style={{...nC(C),padding:12,marginBottom:5}}><div style={{fontFamily:fM,fontSize:20,fontWeight:700,color:C.acc,marginBottom:2}}>{x.fig}</div><p style={{fontFamily:fD,fontSize:11,color:C.tx2,lineHeight:1.5,margin:0}}>{x.note}</p></div>)}
+  {show("actions",d.actions)&&d.actions.map((x,i)=>{const k=`a${i}`;return<div key={k} onClick={()=>sCk(p=>({...p,[k]:!p[k]}))} style={{...nC(C),padding:"8px 10px",marginBottom:4,cursor:"pointer",display:"flex",alignItems:"flex-start",gap:7}}><div style={{...(ck[k]?nI(C):nC(C)),width:18,height:18,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:C.ok,flexShrink:0,marginTop:2}}>{ck[k]&&"✓"}</div><span style={{fontFamily:fB,fontSize:11,color:ck[k]?C.tx3:C.tx,textDecoration:ck[k]?"line-through":"none",lineHeight:1.5}}>{x}</span></div>;})}
+  {show("terms",d.terms)&&d.terms.map((x,i)=><div key={`t${i}`} style={{...nC(C),padding:"9px 12px",marginBottom:5}}><div style={{fontFamily:fD,fontSize:13,fontWeight:700,color:C.acc,marginBottom:2}}>{x.t}</div><p style={{fontFamily:fQ,fontSize:11,color:C.tx2,lineHeight:1.5,fontStyle:"italic",margin:0}}>{x.d}</p></div>)}
+  <div style={{display:"flex",gap:6,marginTop:8}}><button onClick={()=>onNav(SC.MM)} style={{...nB(C),flex:1,padding:"10px 0",fontFamily:fB,fontSize:11,fontWeight:600,color:C.acc}}>🗺️ Mind Map</button><button onClick={()=>onNav(SC.QA)} style={{...nB(C),flex:1,padding:"10px 0",fontFamily:fB,fontSize:11,fontWeight:600,color:C.acc}}>💬 Q&A</button></div>
 </div>;}
  
-/* ── MIND MAP ── */
-function MM(){const{dk}=useT();const C=dk?TH.dark:TH.light;
-const d=MMAP;const cx=300,cy=230,r1=120,r2=210;
-const angles=d.branches.map((_,i)=>i*90-90);
-return<div style={{padding:20}}>
-  <h2 style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx,marginBottom:14}}>Chapter Mind Map</h2>
-  <div style={{...nC(C),padding:12,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-    <svg viewBox="0 0 600 460" style={{width:"100%",minWidth:400}}>
-      {d.branches.map((b,i)=>{
-        const col=dk?b.dc:b.lc;const a=(angles[i]*Math.PI)/180;
-        const bx=cx+r1*Math.cos(a),by=cy+r1*Math.sin(a);
-        return<g key={`l${i}`}>
-          <line x1={cx} y1={cy} x2={bx} y2={by} stroke={col} strokeWidth="2" strokeOpacity=".4"/>
-          {b.ch.map((_,j)=>{const sp=28;const ca=angles[i]+(j-(b.ch.length-1)/2)*sp;const cr=(ca*Math.PI)/180;
-            return<line key={j} x1={bx} y1={by} x2={cx+r2*Math.cos(cr)} y2={cy+r2*Math.sin(cr)} stroke={col} strokeWidth="1.2" strokeOpacity=".2"/>;
-          })}
-        </g>;
-      })}
-      <circle cx={cx} cy={cy} r="48" fill={C.bgL} stroke={C.acc} strokeWidth="2"/>
-      <text x={cx} y={cy-6} textAnchor="middle" fill={C.tx} fontSize="10" fontFamily="Cormorant Garamond" fontWeight="700">Ch.1: Atomic</text>
-      <text x={cx} y={cy+8} textAnchor="middle" fill={C.acc} fontSize="10" fontFamily="Cormorant Garamond" fontWeight="700">Habits</text>
-      {d.branches.map((b,i)=>{
-        const col=dk?b.dc:b.lc;const a=(angles[i]*Math.PI)/180;
-        const bx=cx+r1*Math.cos(a),by=cy+r1*Math.sin(a);
-        return<g key={`n${i}`}>
-          <rect x={bx-52} y={by-16} width="104" height="32" rx="10" fill={C.bgL} stroke={col} strokeWidth="1.5"/>
-          {b.label.split("\n").map((ln,li)=><text key={li} x={bx} y={by+(li*11)-(b.label.includes("\n")?4:1)} textAnchor="middle" fill={col} fontSize="9" fontFamily="Nunito" fontWeight="700">{ln}</text>)}
-          {b.ch.map((child,j)=>{const sp=28;const ca=angles[i]+(j-(b.ch.length-1)/2)*sp;const cr=(ca*Math.PI)/180;
-            const cx2=cx+r2*Math.cos(cr),cy2=cy+r2*Math.sin(cr);
-            return<g key={j}><rect x={cx2-46} y={cy2-11} width="92" height="22" rx="8" fill={`${col}14`} stroke={`${col}44`} strokeWidth="1"/>
-              <text x={cx2} y={cy2+4} textAnchor="middle" fill={C.tx2} fontSize="8" fontFamily="Nunito">{child}</text></g>;
-          })}
-        </g>;
-      })}
-    </svg>
-  </div>
-  <p style={{fontFamily:fB,fontSize:12,color:C.tx3,textAlign:"center",marginTop:10}}>Each node maps to a page-range section in the chapter breakdown</p>
-</div>;}
+/* ══ MIND MAP ══ */
+function MM({ch}){const{dk}=useT();const C=dk?TH.dark:TH.light;const mm=genMindMap(ch);
+if(!mm?.branches?.length)return<div style={{padding:16,textAlign:"center"}}><p style={{fontFamily:fB,fontSize:12,color:C.tx3}}>Not enough data for mind map.</p></div>;
+const cx=260,cy=200,r1=100,r2=180;const angs=mm.branches.map((_,i)=>i*(360/mm.branches.length)-90);
+return<div style={{padding:14}}><h2 style={{fontFamily:fD,fontSize:17,fontWeight:700,color:C.tx,marginBottom:8}}>Mind Map</h2>
+<div style={{...nC(C),padding:8,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+<svg viewBox="0 0 520 400" style={{width:"100%",minWidth:340}}>
+{mm.branches.map((b,i)=>{const col=dk?b.dc:b.lc;const a=angs[i]*Math.PI/180;const bx=cx+r1*Math.cos(a),by=cy+r1*Math.sin(a);return<g key={`l${i}`}><line x1={cx} y1={cy} x2={bx} y2={by} stroke={col} strokeWidth="1.5" strokeOpacity=".4"/>{b.ch.map((_,j)=>{const sp=24;const ca=angs[i]+(j-(b.ch.length-1)/2)*sp;const cr=ca*Math.PI/180;return<line key={j} x1={bx} y1={by} x2={cx+r2*Math.cos(cr)} y2={cy+r2*Math.sin(cr)} stroke={col} strokeWidth="1" strokeOpacity=".2"/>;})}</g>;})}
+<circle cx={cx} cy={cy} r="34" fill={C.bgL} stroke={C.acc} strokeWidth="1.5"/><text x={cx} y={cy+3} textAnchor="middle" fill={C.acc} fontSize="7" fontFamily="Nunito" fontWeight="700">{mm.center}</text>
+{mm.branches.map((b,i)=>{const col=dk?b.dc:b.lc;const a=angs[i]*Math.PI/180;const bx=cx+r1*Math.cos(a),by=cy+r1*Math.sin(a);return<g key={`n${i}`}><rect x={bx-42} y={by-12} width="84" height="24" rx="7" fill={C.bgL} stroke={col} strokeWidth="1"/><text x={bx} y={by+3} textAnchor="middle" fill={col} fontSize="6.5" fontFamily="Nunito" fontWeight="700">{b.label}</text>{b.ch.map((c,j)=>{const sp=24;const ca=angs[i]+(j-(b.ch.length-1)/2)*sp;const cr=ca*Math.PI/180;const cx2=cx+r2*Math.cos(cr),cy2=cy+r2*Math.sin(cr);return<g key={j}><rect x={cx2-36} y={cy2-9} width="72" height="18" rx="5" fill={`${col}14`} stroke={`${col}40`} strokeWidth=".7"/><text x={cx2} y={cy2+3} textAnchor="middle" fill={C.tx2} fontSize="6" fontFamily="Nunito">{typeof c==='string'?c.slice(0,16):''}</text></g>;})}</g>;})}
+</svg></div></div>;}
  
-/* ── Q&A ── */
-function QA(){const{dk}=useT();const C=dk?TH.dark:TH.light;
-const[inp,sInp]=useState("");const[msgs,sMsgs]=useState(QAI);const[typ,sTyp]=useState(false);
-const send=()=>{if(!inp.trim())return;const q=inp;sMsgs(m=>[...m,{role:"user",text:q}]);sInp("");sTyp(true);
-  const ql=q.toLowerCase();
-  let ans,src;
-  if(ql.includes("goal")||ql.includes("system")){ans="Clear argues that goals don't differentiate winners from losers — every Olympic athlete wants gold. What separates them is the system they follow. He identifies four problems with goals: they're shared by everyone, they create only momentary change, they defer happiness, and they kill motivation once achieved. His takeaway: 'You do not rise to the level of your goals. You fall to the level of your systems.'";src="Ch. 1, pp. 22–27";}
-  else if(ql.includes("british")||ql.includes("cycling")||ql.includes("marginal")||ql.includes("brailsford")){ans="Dave Brailsford transformed British Cycling using the 'aggregation of marginal gains' — finding 1% improvements in everything from bike seats to hand-washing protocols. Within 5 years the team won 60% of cycling golds at Beijing 2008. Within 10 years they dominated the Tour de France.";src="Ch. 1, pp. 26–29";}
-  else if(ql.includes("1%")||ql.includes("compound")||ql.includes("37")){ans="Clear's foundational math: 1% better each day for a year yields 37.78× improvement (1.01^365). Conversely, 1% worse daily leaves you at 0.03. This reframes self-improvement from dramatic overhauls to patient daily consistency.";src="Ch. 1, pp. 15–18";}
-  else if(ql.includes("plateau")||ql.includes("ice")||ql.includes("latent")){ans="The 'Plateau of Latent Potential' is the frustrating period where effort seems wasted because visible results haven't appeared yet. Clear uses the ice cube analogy: heating from 25°F to 31°F shows nothing, but at 32°F everything changes. All prior work was stored, not wasted.";src="Ch. 1, pp. 18–21";}
-  else if(ql.includes("quote")){ans="Key quotes from Chapter 1: 'Habits are the compound interest of self-improvement' (p.16), 'You do not rise to the level of your goals. You fall to the level of your systems.' (p.27), and 'Time magnifies the margin between success and failure.' (p.18)";src="Ch. 1, various";}
-  else{ans="Based on Chapter 1 of Atomic Habits, Clear's central thesis is that small, consistent improvements compound into extraordinary results. He proves this through the 1% rule (37.78× in a year), the Plateau of Latent Potential (why most people quit too early), the systems-over-goals framework, and the British Cycling case study where marginal gains in hundreds of small areas created world-class dominance.";src="Ch. 1, pp. 15–32";}
-  setTimeout(()=>{sMsgs(m=>[...m,{role:"ai",text:ans,sources:[src]}]);sTyp(false);},1800);
-};
+/* ══ Q&A ══ */
+function QAS({book,engine}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const[inp,sI]=useState("");const[msgs,sM]=useState([]);const[busy,sB]=useState(false);
+const btm=useRef(null);useEffect(()=>{btm.current?.scrollIntoView({behavior:"smooth"});},[msgs]);
+const send=()=>{if(!inp.trim()||busy||!book)return;const q=inp;sM(m=>[...m,{r:"u",t:q}]);sI("");sB(true);
+  if(engine){aiAnswer(engine,q,book.pages).then(a=>{sM(m=>[...m,{r:"a",t:a.text,src:a.src}]);sB(false);});}
+  else{setTimeout(()=>{const res=searchText(q,book.pages);
+    sM(m=>[...m,res.length?{r:"a",t:res.map(r=>`[p.${r.pageNum}] ${r.text.slice(0,300)}…`).join('\n\n'),src:'pp. '+res.map(r=>r.pageNum).join(', ')}:{r:"a",t:'No matching passages found. Try different keywords.'}]);sB(false);},400);}};
 return<div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-  <div style={{padding:"12px 18px",flexShrink:0}}><h2 style={{fontFamily:fD,fontSize:20,fontWeight:700,color:C.tx}}>Ask About This Book</h2><p style={{fontFamily:fB,fontSize:12,color:C.tx3,marginTop:3}}>AI answers sourced from the book, with page references</p></div>
-  <div style={{flex:1,overflowY:"auto",padding:"0 18px 16px",display:"flex",flexDirection:"column",gap:12}}>
-    {msgs.map((m,i)=>(
-      <div key={i} style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"85%"}}>
-        <div style={{...(m.role==="user"?{...nB(C),background:C.acc,boxShadow:`4px 4px 10px ${C.shD}`}:nC(C)),padding:"11px 14px",borderRadius:16}}>
-          <p style={{fontFamily:m.role==="user"?fB:fD,fontSize:14,color:m.role==="user"?(dk?"#1E1E2A":"#FFF"):C.tx,lineHeight:1.65,margin:0}}>{m.text}</p>
-        </div>
-        {m.sources&&<div style={{marginTop:4,paddingLeft:4}}>{m.sources.map((s,j)=><Tag key={j} color={C.ok}>{s}</Tag>)}</div>}
-      </div>
-    ))}
-    {typ&&<div style={{...nI(C),padding:"10px 14px",alignSelf:"flex-start",borderRadius:16}}><span style={{fontFamily:fB,fontSize:13,color:C.tx3}}>Thinking…</span></div>}
+  <div style={{padding:"8px 14px",flexShrink:0}}><h2 style={{fontFamily:fD,fontSize:17,fontWeight:700,color:C.tx}}>Ask About This Book</h2><p style={{fontFamily:fB,fontSize:10,color:C.tx3,marginTop:1}}>{engine?'Gemma AI answers with page references':'Keyword search across your book text'}</p></div>
+  <div style={{flex:1,overflowY:"auto",padding:"0 14px 10px",display:"flex",flexDirection:"column",gap:8}}>
+    {!msgs.length&&<div style={{...nI(C),padding:12,borderRadius:12,textAlign:"center"}}><p style={{fontFamily:fB,fontSize:11,color:C.tx3}}>Ask any question about your book</p></div>}
+    {msgs.map((m,i)=><div key={i} style={{alignSelf:m.r==="u"?"flex-end":"flex-start",maxWidth:"85%"}}><div style={{...(m.r==="u"?{...nB(C),background:C.acc}:nC(C)),padding:"8px 10px",borderRadius:12}}><p style={{fontFamily:m.r==="u"?fB:fD,fontSize:12,color:m.r==="u"?(dk?"#1E1E2A":"#fff"):C.tx,lineHeight:1.55,margin:0,whiteSpace:"pre-wrap"}}>{m.t}</p></div>{m.src&&<div style={{marginTop:2}}><Tag color={C.ok}>{m.src}</Tag></div>}</div>)}
+    {busy&&<div style={{...nI(C),padding:"7px 10px",alignSelf:"flex-start",borderRadius:10}}><span style={{fontFamily:fB,fontSize:11,color:C.tx3}}>{engine?'Gemma thinking…':'Searching…'}</span></div>}
+    <div ref={btm}/>
   </div>
-  <div style={{padding:"8px 18px 12px",display:"flex",gap:8,flexShrink:0}}>
-    <div style={{...nI(C),flex:1,padding:0}}><input value={inp} onChange={e=>sInp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Ask anything about the book…" style={{width:"100%",padding:"12px 14px",border:"none",background:"transparent",color:C.tx,fontFamily:fB,fontSize:13,outline:"none",boxSizing:"border-box"}}/></div>
-    <button onClick={send} style={{...nB(C),width:44,height:44,borderRadius:12,fontSize:17,color:C.acc,display:"flex",alignItems:"center",justifyContent:"center"}}>↑</button>
-  </div>
+  <div style={{padding:"5px 14px 8px",display:"flex",gap:5,flexShrink:0}}><div style={{...nI(C),flex:1,padding:0}}><input value={inp} onChange={e=>sI(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Ask about the book…" style={{width:"100%",padding:"10px 10px",border:"none",background:"transparent",color:C.tx,fontFamily:fB,fontSize:12,outline:"none",boxSizing:"border-box"}}/></div><button onClick={send} style={{...nB(C),width:42,height:42,borderRadius:10,fontSize:15,color:C.acc,display:"flex",alignItems:"center",justifyContent:"center"}}>↑</button></div>
 </div>;}
  
-/* ── DAILY DIGEST ── */
-function Dig({onNav}){const{dk}=useT();const C=dk?TH.dark:TH.light;
-return<div style={{padding:20}}>
-  <div style={{textAlign:"center",marginBottom:22}}>
-    <div style={{fontSize:48,marginBottom:8}}>🔥</div>
-    <h2 style={{fontFamily:fD,fontSize:26,fontWeight:700,color:C.tx,marginBottom:4}}>Day 4 Streak</h2>
-    <p style={{fontFamily:fB,fontSize:13,color:C.tx3}}>Consistency compounds — keep going</p>
-  </div>
-  <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:24}}>
-    {["M","T","W","T","F","S","S"].map((d,i)=>(
-      <div key={i} style={{...(i<4?nI(C):nC(C)),width:36,height:36,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:fM,fontSize:12,fontWeight:700,color:i<4?C.ok:C.tx3}}>{i<4?"✓":d}</div>
-    ))}
-  </div>
-  <div style={{...nC(C),padding:18,marginBottom:14}}>
-    <Tag color={C.warn}>Today's Chapter</Tag>
-    <h3 style={{fontFamily:fD,fontSize:18,fontWeight:700,color:C.tx,margin:"10px 0 6px"}}>Ch. 4: The Man Who Didn't Look Right</h3>
-    <p style={{fontFamily:fQ,fontSize:13,color:C.tx2,lineHeight:1.65,fontStyle:"italic",marginBottom:14}}>This chapter explores how habits become automatic through pattern recognition. Clear tells the story of a museum curator who could spot art forgeries at a glance…</p>
-    <button onClick={()=>onNav(S.CH)} style={{...nB(C),width:"100%",padding:"12px 0",fontFamily:fD,fontSize:15,fontWeight:700,color:C.acc}}>Read Chapter Breakdown →</button>
-  </div>
-  <div style={{...nI(C),padding:16,borderRadius:16}}>
-    <h4 style={{fontFamily:fB,fontSize:14,fontWeight:700,color:C.tx,margin:"0 0 8px"}}>📊 Quick Quiz — Chapter 3 Recap</h4>
-    <p style={{fontFamily:fB,fontSize:13,color:C.tx3,marginBottom:10}}>What are the 4 steps of the habit loop?</p>
-    {["Cue → Craving → Response → Reward","Plan → Act → Review → Repeat","Trigger → Behavior → Outcome → Loop"].map((o,i)=>(
-      <div key={i} style={{...nC(C),padding:"10px 12px",marginBottom:7,cursor:"pointer"}}>
-        <span style={{fontFamily:fB,fontSize:13,color:i===0?C.ok:C.tx,fontWeight:i===0?700:400}}>{i===0?"✓ ":""}{o}</span>
-      </div>
-    ))}
-  </div>
-</div>;}
+/* ══ EXPORT ══ */
+function Exp({book}){const{dk}=useT();const C=dk?TH.dark:TH.light;
+const[sel,sS]=useState(()=>new Set(book?book.chapters.map((_,i)=>i):[]));
+const tog=i=>{const n=new Set(sel);n.has(i)?n.delete(i):n.add(i);sS(n);};
+const dl=()=>{if(!book||!sel.size)return;let md=`# ${book.title}\n\n*Extracted by BookBrain*\n\n`;
+  book.chapters.forEach((ch,i)=>{if(!sel.has(i)||!ch.insights)return;const ins=ch.insights;
+    md+=`---\n## ${ch.title}\n*Pages ${ch.ps}–${ch.pe} · ${ins.mode==='gemma'?'Gemma AI':'Smart Extract'}*\n\n`;
+    if(ins.summary)md+=`**Summary:** ${ins.summary}\n\n`;
+    if(ins.ideas.length){md+='### Key Ideas\n';ins.ideas.forEach(x=>md+=`- **${x.text}**\n  ${x.detail}\n\n`);}
+    if(ins.quotes.length){md+='### Quotes\n';ins.quotes.forEach(x=>md+=`> "${x.text}"${x.p?' (p.'+x.p+')':''}\n\n`);}
+    if(ins.stories.length){md+='### Stories\n';ins.stories.forEach(x=>md+=`- **${x.title}:** ${x.detail}\n\n`);}
+    if(ins.stats.length){md+='### Statistics\n';ins.stats.forEach(x=>md+=`- **${x.fig}** — ${x.note}\n\n`);}
+    if(ins.actions.length){md+='### Actions\n';ins.actions.forEach(x=>md+=`- [ ] ${x}\n`);md+='\n';}
+    if(ins.terms.length){md+='### Terms\n';ins.terms.forEach(x=>md+=`- **${x.t}:** ${x.d}\n\n`);}
+  });
+  const b=new Blob([md],{type:'text/markdown'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=book.title.replace(/[^a-z0-9]/gi,'_')+'_BookBrain.md';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);};
+if(!book)return null;
+return<div style={{padding:14}}><h2 style={{fontFamily:fD,fontSize:19,fontWeight:700,color:C.tx,marginBottom:2}}>Export</h2><p style={{fontFamily:fB,fontSize:11,color:C.tx3,marginBottom:10}}>Markdown (.md) with all insights</p>
+<div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>{book.chapters.map((ch,i)=><div key={i} onClick={()=>tog(i)} style={{...nC(C),padding:"8px 10px",cursor:"pointer",display:"flex",alignItems:"center",gap:7}}><div style={{...(sel.has(i)?nI(C):nC(C)),width:20,height:20,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.acc,flexShrink:0}}>{sel.has(i)&&"✓"}</div><span style={{fontFamily:fB,fontSize:11,color:C.tx,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ch.title}</span></div>)}</div>
+<button onClick={dl} disabled={!sel.size} style={{...nB(C),width:"100%",padding:"11px 0",fontFamily:fD,fontSize:14,fontWeight:700,color:sel.size?C.acc:C.tx3,opacity:sel.size?.9:.4}}>📤 Download {sel.size} Ch.</button></div>;}
  
-/* ── EXPORT ── */
-function Exp(){const{dk}=useT();const C=dk?TH.dark:TH.light;
-const[sel,sSel]=useState(new Set([0,1,2,3]));const[exp,sExp]=useState(false);const[done,sDone]=useState(false);
-const tog=i=>{const n=new Set(sel);n.has(i)?n.delete(i):n.add(i);sSel(n);};
-return<div style={{padding:20}}>
-  <h2 style={{fontFamily:fD,fontSize:22,fontWeight:700,color:C.tx,marginBottom:4}}>Export to Word</h2>
-  <p style={{fontFamily:fB,fontSize:13,color:C.tx3,marginBottom:16}}>Select chapters for your .docx download</p>
-  <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
-    {CHS.slice(0,4).map((ch,i)=>(
-      <div key={i} onClick={()=>tog(i)} style={{...nC(C),padding:"12px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-        <div style={{...(sel.has(i)?nI(C):nC(C)),width:22,height:22,borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.acc,flexShrink:0}}>{sel.has(i)&&"✓"}</div>
-        <span style={{fontFamily:fB,fontSize:13,color:C.tx}}>{ch.title}</span>
-      </div>
-    ))}
-  </div>
-  <div style={{...nI(C),padding:14,marginBottom:16}}>
-    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-      {["Key Ideas","Quotes","Stories","Stats","Actions","Terms","Mind Map (PNG)"].map(t=><Tag key={t}>{t}</Tag>)}
-    </div>
-  </div>
-  {done?<div style={{textAlign:"center",padding:20}}><div style={{fontSize:44,marginBottom:8}}>✅</div><h3 style={{fontFamily:fD,fontSize:18,fontWeight:700,color:C.ok}}>Export Complete</h3><p style={{fontFamily:fB,fontSize:13,color:C.tx3}}>Atomic_Habits_Breakdown.docx saved</p></div>:
-  <button onClick={()=>{sExp(true);setTimeout(()=>{sExp(false);sDone(true);},2000);}} disabled={exp||sel.size===0}
-    style={{...nB(C),width:"100%",padding:"14px 0",fontFamily:fD,fontSize:16,fontWeight:700,color:exp?C.tx3:C.acc}}>
-    {exp?"Generating document…":`Export ${sel.size} Chapters as .docx`}
-  </button>}
-</div>;}
- 
-/* ── APP SHELL ── */
+/* ══ APP ══ */
 function App(){
-  const[scr,setScr]=useState(S.LIB);
-  const[book,setBook]=useState(null);
-  const[dk,setDk]=useState(false);
-  const[fileName,setFileName]=useState("");
+  const[scr,setSc]=useState(SC.LIB);const[books,setBks]=useState([]);const[aId,sAId]=useState(null);const[aCh,sACh]=useState(0);const[pFile,sPF]=useState(null);
+  const[dk,sDk]=useState(false);
+  const[gEngine,sGE]=useState(null);const[gLoad,sGL]=useState(false);const[gProg,sGP]=useState('');const[gErr,sGErr]=useState('');
   const ref=useRef(null);
-  const nav=useCallback(s=>{setScr(s);ref.current?.scrollTo(0,0);},[]);
+  const nav=useCallback(s=>{setSc(s);if(ref.current)ref.current.scrollTop=0;},[]);
   const C=dk?TH.dark:TH.light;
-  const toggleDk=()=>{setDk(d=>{
-    const next=!d;
-    document.body.style.background=next?TH.dark.bg:TH.light.bg;
-    const meta=document.querySelector('meta[name="theme-color"]');
-    if(meta)meta.setAttribute('content',next?TH.dark.bg:TH.light.bg);
-    return next;
-  });};
-  const safeNav=s=>{
-    if((s===S.MM||s===S.QA||s===S.DIG||s===S.EXP)&&!book){setScr(S.LIB);return;}
-    nav(s);
+  const togDk=useCallback(()=>{sDk(d=>{const n=!d;document.body.style.background=n?TH.dark.bg:TH.light.bg;document.getElementById('tc')?.setAttribute('content',n?TH.dark.bg:TH.light.bg);return n;});},[]);
+  const aBook=books.find(b=>b.id===aId);const aChn=aBook?.chapters[aCh];
+  const loadGemma=async()=>{
+    const wl=window.__webllm;if(!wl){sGErr('WebGPU not available. Use Chrome 113+ with hardware acceleration enabled.');return;}
+    sGL(true);sGErr('');sGP('Initializing…');
+    try{const eng=await wl.CreateMLCEngine("gemma-2-2b-it-q4f16_1-MLC",{initProgressCallback:p=>{sGP(p.text||Math.round((p.progress||0)*100)+'%');}});sGE(eng);sGL(false);}
+    catch(e){sGErr('Model load failed: '+e.message);sGL(false);}
   };
-  return<Ctx.Provider value={{dk,tog:toggleDk}}>
+  const enhanceAll=async()=>{if(!gEngine||!aBook)return;
+    const updated={...aBook,chapters:[...aBook.chapters]};
+    for(let i=0;i<updated.chapters.length;i++){
+      sGP(`AI: Ch. ${i+1}/${updated.chapters.length}`);
+      const text=updated.chapters[i].pidx.map(pi=>aBook.pages[pi]?.text||'').join('\n');
+      const res=await aiExtractChapter(gEngine,text);
+      if(res)updated.chapters[i]={...updated.chapters[i],insights:res};
+    }
+    setBks(bs=>bs.map(b=>b.id===aBook.id?updated:b));sGP('Done!');
+  };
+  const enhanceCh=async()=>{if(!gEngine||!aBook||!aChn)return;
+    sGP('AI extracting…');
+    const text=aChn.pidx.map(pi=>aBook.pages[pi]?.text||'').join('\n');
+    const res=await aiExtractChapter(gEngine,text);
+    if(res){const updated={...aBook,chapters:[...aBook.chapters]};updated.chapters[aCh]={...updated.chapters[aCh],insights:res};setBks(bs=>bs.map(b=>b.id===aBook.id?updated:b));}
+    sGP('Done!');
+  };
+  const safeNav=useCallback(s=>{if(!aBook&&s!==SC.LIB&&s!==SC.UP)return;nav(s);},[aBook,nav]);
+  return<Ctx.Provider value={{dk,tog:togDk}}>
     <div style={{maxWidth:440,margin:"0 auto",background:C.bg,height:"100vh",display:"flex",flexDirection:"column",transition:"background .3s"}}>
-      <Nav scr={scr} onNav={nav} sub={book?.title&&scr!==S.LIB?book.title:null}/>
-      <div ref={ref} style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
-        {scr===S.LIB&&<Lib onNav={nav} onSel={setBook}/>}
-        {scr===S.UP&&<Upload onNav={nav} onFile={setFileName}/>}
-        {scr===S.PROC&&<Proc onNav={nav} onSel={setBook} fileName={fileName}/>}
-        {scr===S.OV&&book&&<Ov book={book} onNav={nav}/>}
-        {scr===S.CH&&<Ch/>}
-        {scr===S.MM&&<MM/>}
-        {scr===S.QA&&<QA/>}
-        {scr===S.DIG&&<Dig onNav={nav}/>}
-        {scr===S.EXP&&<Exp/>}
+      <TopNav scr={scr} onNav={nav} sub={aBook?.title&&![SC.LIB,SC.UP,SC.PROC].includes(scr)?aBook.title:null}/>
+      <div ref={ref} style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",display:"flex",flexDirection:"column"}}>
+        {scr===SC.LIB&&<Lib books={books} onNav={nav} onSel={sAId}/>}
+        {scr===SC.UP&&<UL onNav={nav} onProcess={f=>{sPF(f);nav(SC.PROC);}}/>}
+        {scr===SC.PROC&&pFile&&<Proc file={pFile} onDone={b=>{setBks(bs=>[...bs,b]);sAId(b.id);nav(SC.OV);}}/>}
+        {scr===SC.OV&&<Ov book={aBook} onNav={nav} onCh={sACh} engine={gEngine} gLoading={gLoad} gProg={gProg} gErr={gErr} onLoadGemma={loadGemma} onEnhanceAll={enhanceAll}/>}
+        {scr===SC.CH&&<ChV chapter={aChn} engine={gEngine} gLoading={gLoad} gProg={gProg} gErr={gErr} onLoadGemma={loadGemma} onEnhanceCh={enhanceCh} onNav={nav}/>}
+        {scr===SC.MM&&<MM ch={aChn}/>}
+        {scr===SC.QA&&<QAS book={aBook} engine={gEngine}/>}
+        {scr===SC.EXP&&<Exp book={aBook}/>}
       </div>
-      <Bar scr={scr} onNav={safeNav}/>
+      <BotBar scr={scr} onNav={safeNav}/>
     </div>
   </Ctx.Provider>;
 }
- 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
- 
